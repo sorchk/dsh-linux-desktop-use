@@ -155,10 +155,27 @@ jobs:
             npm publish "${TARBALL}" --access public
           fi
 
+      - name: 演练结果提示
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "::notice::dry_run=true：本次只做发布演练，tarball 已通过 npm publish --dry-run 校验，未真正上传到 npm（因此跳过发布结果校验）"
+
       - name: 校验发布结果
+        # dry_run 时并未真正发布到 npm，回查 registry 必然 404，跳过本步
+        if: ${{ inputs.dry_run != true }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
-          npm view "dsh-linux-desktop-use@${VERSION}" version dist.tarball
+          # npm registry 存在秒级传播延迟，最多重试 5 次
+          for i in 1 2 3 4 5; do
+            if npm view "dsh-linux-desktop-use@${VERSION}" version dist.tarball; then
+              echo "::notice::版本 ${VERSION} 已在 npm registry 上确认发布成功"
+              exit 0
+            fi
+            echo "::notice::第 ${i} 次回查未查到版本 ${VERSION}，5 秒后重试"
+            sleep 5
+          done
+          echo "::error::发布后在 npm registry 上未查到版本 ${VERSION}"
+          exit 1
