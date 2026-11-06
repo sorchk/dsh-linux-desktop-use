@@ -147,7 +147,7 @@ curl -sS -X POST http://127.0.0.1:3080/dsh-market/note \
 ```bash
 # 从 npm 安装（发布后可用，支持指定版本）
 plugin_manager install_bundle dsh-linux-desktop-use
-plugin_manager install_bundle dsh-linux-desktop-use@1.5.1
+plugin_manager install_bundle dsh-linux-desktop-use@1.5.2
 
 # 本地开发：以链接方式安装到 DSH profile
 plugin_manager install_bundle /home/sorc/workspaces/dsh-xfce-use/dsh-linux-desktop-use
@@ -191,7 +191,7 @@ cordis_inspect_query host Tool listTools   # 应看到 10 个 linux_* 工具
 | 输入项 | 默认 | 说明 |
 | --- | --- | --- |
 | `publish` | `false` | 是否真正发布到 npm；`false` 时只打包并产出 `dsh-linux-desktop-use-<version>.tgz` 供下载 |
-| `dry_run` | `false` | 发布演练：`npm publish --dry-run`，不真正上传（需同时勾选 `publish`） |
+| `dry_run` | `false` | 发布演练：`npm publish --dry-run`，不真正上传（需同时勾选 `publish`）；演练模式不会回查 npm 上的版本，因为演练不会真的发布 |
 | `provenance` | `false` | 启用 npm provenance 签名（需仓库为公开仓库，且工作流已申请 `id-token: write`） |
 
 ### 工作流做了什么
@@ -199,12 +199,12 @@ cordis_inspect_query host Tool listTools   # 应看到 10 个 linux_* 工具
 | 阶段 | 步骤 |
 | --- | --- |
 | 打包 | 检出代码 → Node.js 20 → `node --check` 语法检查 → 校验 `package.json`（无 `private`、有 `version`）→ `npm pack` → 上传 tarball artifact |
-| 发布 | 仅当 `publish = true`：校验 `NPM_TOKEN` 存在 → 下载 tarball → 检查该版本是否已发布（已发布则报错退出）→ `npm publish --access public` → 回查 npm 上的版本与 tarball 地址 |
+| 发布 | 仅当 `publish = true`：校验 `NPM_TOKEN` 存在 → 下载 tarball → 检查该版本是否已发布（已发布则报错退出）→ `npm publish --access public` → 回查 npm 上的版本与 tarball 地址（最多重试 5 次；`dry_run` 模式跳过回查） |
 
 > 版本号来自 `package.json`。重复发布同一版本会被 npm 拒绝，工作流也会提前拦截，
 > 因此每次发布前请先提升 `package.json` 的版本号并打上同名 tag。
 
-> **注意**：发布时传给 npm 的 tarball 路径必须以 `./` 开头（如 `./dist/dsh-linux-desktop-use-1.5.1.tgz`）。
+> **注意**：发布时传给 npm 的 tarball 路径必须以 `./` 开头（如 `./dist/dsh-linux-desktop-use-1.5.2.tgz`）。
 > npm 会把 `dist/xxx.tgz` 这种「斜杠分隔」参数当成 GitHub 简写（`owner/repo`），
 > 转成 `ssh://git@github.com/dist/xxx.tgz.git` 去克隆；CI 没有 SSH key 时会报
 > `Permission denied (publickey)`、`npm error code 128`。这是 v1.5.0 首次发布失败的原因。

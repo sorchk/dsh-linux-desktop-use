@@ -1,5 +1,19 @@
 # 更新日志
 
+### v1.5.2  2026-11-06
+
+修复 `dry_run`（发布演练）模式下工作流必然失败的问题。
+
+1. `dry_run = true` 时 `npm publish --dry-run` 并不会真正上传到 npm，但原来的「校验发布结果」
+   步骤仍会执行 `npm view dsh-linux-desktop-use@<version>` 回查，必然得到
+   `npm error code 404 / 'dsh-linux-desktop-use@x.y.z' is not in this registry`，导致演练被判为失败。
+   现在该步骤加上 `if: ${{ inputs.dry_run != true }}`，演练模式跳过回查。
+2. 新增「演练结果提示」步骤：演练模式下输出 `::notice::` 说明 tarball 已通过 dry-run 校验、
+   但未真正上传，避免误以为已发布。
+3. 「校验发布结果」增加重试（最多 5 次、间隔 5 秒）：npm registry 存在秒级传播延迟，
+   刚发布完立刻回查可能偶发 404；连续 5 次都查不到才判为失败并报 `::error::`。
+4. `v1.5.1` 尚未真正发布到 npm（当时为演练），本次版本号升到 `1.5.2`。
+
 ### v1.5.1  2026-11-06
 
 修复 GitHub Actions 发布到 npm 失败的问题。
