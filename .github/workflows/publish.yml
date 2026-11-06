@@ -1,0 +1,154 @@
+name: 打包并发布到 npm
+
+# 仅手动触发：在 GitHub Actions 页面点击「Run workflow」才会执行，
+# 不做任何自动打包/自动发布（无 push / tag / schedule 触发器）。
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: '是否真正发布到 npm（false = 只打包并产出 tarball 供下载）'
+        type: boolean
+        default: false
+      dry_run:
+        description: '发布前演练（npm publish --dry-run，不会真正上传）'
+        type: boolean
+        default: false
+      provenance:
+        description: '启用 npm provenance 签名（需仓库为公开仓库）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------- 打包
+  build:
+    name: 打包
+    runs-on: ubuntu-latest
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 语法检查
+        run: |
+          set -euo pipefail
+          for f in index.js client.js lib/*.js; do
+            node --check "$f"
+            echo "ok: $f"
+          done
+
+      - name: 校验 package.json
+        run: |
+          set -euo pipefail
+          node -e "const p=require('./package.json');
+            if (p.private) { console.error('package.json 仍为 private:true，无法发布'); process.exit(1); }
+            if (!p.version) { console.error('缺少 version'); process.exit(1); }
+            console.log('包名:', p.name, '版本:', p.version);"
+
+      - name: 生成 tarball
+        id: pack
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          npm pack --pack-destination dist
+          echo "tarball=$(ls dist/*.tgz | head -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: 上传 tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: dist/*.tgz
+          if-no-files-found: error
+
+      - name: 输出包内容清单
+        run: tar -tzf "${{ steps.pack.outputs.tarball }}"
+
+  # ---------------------------------------------------------------- 发布
+  publish:
+    name: 发布到 npm
+    needs: build
+    # 仅当手动触发时勾选了「是否真正发布到 npm」才执行
+    if: ${{ inputs.publish == true }}
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/dsh-linux-desktop-use
+    permissions:
+      contents: read
+      id-token: write # npm provenance 需要
+    steps:
+      - name: 准备 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验 npm token
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::未在仓库 Secrets 中配置 NPM_TOKEN，无法发布"
+            exit 1
+          fi
+          echo "NPM_TOKEN 已配置"
+
+      - name: 下载 tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: dist
+
+      - name: 检查版本是否已发布
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "dsh-linux-desktop-use@${VERSION}" version >/dev/null 2>&1; then
+            echo "::error::版本 ${VERSION} 已发布过，请先提升 package.json 版本号"
+            exit 1
+          fi
+          echo "版本 ${VERSION} 尚未发布，可以继续"
+
+      - name: 发布
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PROVENANCE: ${{ inputs.provenance }}
+        run: |
+          set -euo pipefail
+          if [ "${DRY_RUN}" = "true" ]; then
+            npm publish dist/*.tgz --dry-run --access public
+            exit 0
+          fi
+          if [ "${PROVENANCE}" = "true" ]; then
+            npm publish dist/*.tgz --access public --provenance
+          else
+            npm publish dist/*.tgz --access public
+          fi
+
+      - name: 校验发布结果
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          npm view "dsh-linux-desktop-use@${VERSION}" version dist.tarball

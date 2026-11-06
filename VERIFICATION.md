@@ -1,6 +1,6 @@
 # 验证记录（VERIFICATION）
 
-本文件记录 `@local/dsh-linux-desktop-use` 在**本机实机环境**上的验证步骤与实测结果。
+本文件记录 `dsh-linux-desktop-use`（原名 `@local/dsh-linux-desktop-use`）在**本机实机环境**上的验证步骤与实测结果。
 验证脚本：`scripts/smoke-test.mjs`（用假 `ctx` 驱动**真实**工具实现，直连真实 X 会话）。
 
 ## 0. 验证环境
@@ -63,6 +63,7 @@
 | --- | --- | --- |
 | 插件目录 | `dsh-xfce-computer-use/` | `dsh-linux-desktop-use/` |
 | 包名 | `@local/dsh-xfce-computer-use` | `@local/dsh-linux-desktop-use`（v1.4.0，因缓存键需要再改一次） |
+| 包名（npm 发布用） | `@local/dsh-linux-desktop-use` | `dsh-linux-desktop-use`（v1.5.0，去掉 scope 便于发布到 npm 公共区） |
 | 补丁 id | `dsh-xfce-computer-use` | `dsh-linux-desktop-use` |
 | 工具前缀 | `xfce_*`（10 个） | `linux_*`（11 个，含 `linux_check_env`） |
 | 配置文件 | `~/.config/dsh/xfce-computer-use.json` | `~/.config/dsh/linux-computer-use.json` |
@@ -100,3 +101,15 @@
 | 跨源防护 | `POST /config` 带 `Origin: http://evil.example` | 403 `{"error":"cross-origin request refused"}` |
 | 同源写入 | `POST /config` 带 `Origin: http://127.0.0.1:3080` | 200，配置落盘 |
 | 模型侧一致性 | `linux_check_env` 工具 | 与详情页按钮读同一份 `checkEnvironment` 实现 |
+
+## 8. 打包发布流程验证（v1.5.0）
+
+| 检查 | 方法 | 结果 |
+| --- | --- | --- |
+| 工作流文件存在且仅手动触发 | `.github/workflows/publish.yml` 的 `on:` 只含 `workflow_dispatch` | 无 push / tag / schedule 触发器，**不会自动打包或发布** |
+| 语法检查步骤可通过 | 本机 `node --check index.js client.js lib/*.js` | 全部通过（CI 中为同一条命令） |
+| 打包可产出 tarball | 本机 `npm pack --pack-destination dist` | 生成 `dsh-linux-desktop-use-1.5.0.tgz`（17 个文件，压缩后 38.7 kB） |
+| 包内容完整 | `tar -tzf` 列出 tarball | 含 `index.js`、`client.js`、`lib/*`、`locale/*.json`、`icon.svg`、`cordis.patch.yml`、`README.md`、`CHANGELOG.md`、`PERMISSIONS.md`、`VERIFICATION.md` |
+| 包元数据可发布 | `package.json` | 已去掉 `private: true`，含 `publishConfig.access: public`、`repository`、`engines.node >= 20` |
+
+> 实际发布需要仓库 Secret `NPM_TOKEN`，只能在 GitHub Actions 页面手动触发后验证。

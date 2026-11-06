@@ -1,6 +1,6 @@
 # 权限声明（PERMISSIONS）
 
-本文件逐项说明 `@local/dsh-linux-desktop-use` 在运行时会用到哪些系统能力、为什么需要、以及它**不需要**什么。
+本文件逐项说明 `dsh-linux-desktop-use` 在运行时会用到哪些系统能力、为什么需要、以及它**不需要**什么。
 声明同时以 `package.json → dsh.permissions` 的形式随包发布，便于宿主或审计工具直接读取。
 
 ## 1. 能力总览

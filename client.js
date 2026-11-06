@@ -15,13 +15,13 @@
  * script and the runtime hands React in through the module loader.
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-linux-desktop-use',
+  id: 'dsh-linux-desktop-use',
   factory: (require) => {
     const React = require('react')
     const h = React.createElement
 
     const NS = 'dsh-linux-desktop-use'
-    const PKG = '@local/dsh-linux-desktop-use'
+    const PKG = 'dsh-linux-desktop-use'
     const BASE = '/dsh-linux-desktop-use'
 
     const DICT = {

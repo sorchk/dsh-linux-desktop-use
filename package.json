@@ -1,7 +1,6 @@
 {
-  "name": "@local/dsh-linux-desktop-use",
-  "version": "1.4.0",
-  "private": true,
+  "name": "dsh-linux-desktop-use",
+  "version": "1.5.0",
   "type": "module",
   "description": "Control a local Linux graphical desktop from DeepSeek Harness: screenshot, mouse, keyboard, scroll and window tools. Requires a native X11 session with XTEST and the xdotool/scrot/ffmpeg/wmctrl binaries.",
   "exports": {
@@ -18,9 +17,24 @@
     "icon.svg",
     "cordis.patch.yml",
     "README.md",
+    "CHANGELOG.md",
     "PERMISSIONS.md",
     "VERIFICATION.md"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sorchk/dsh-linux-desktop-use.git"
+  },
+  "homepage": "https://github.com/sorchk/dsh-linux-desktop-use#readme",
+  "bugs": {
+    "url": "https://github.com/sorchk/dsh-linux-desktop-use/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -90,5 +104,6 @@
     "x11",
     "xdotool"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "author": "sorchk"
 }

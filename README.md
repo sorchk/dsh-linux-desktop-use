@@ -103,7 +103,7 @@ DSH 有两个不同的展示面，说明文字来源也不同：
 curl -sS -X POST http://127.0.0.1:3080/dsh-market/note \
   -H 'Content-Type: application/json' \
   -H 'Origin: http://127.0.0.1:3080' -H 'Host: 127.0.0.1:3080' \
-  -d '{"name":"@local/dsh-linux-desktop-use","text":"操控本机 Linux 图形桌面…"}'
+  -d '{"name":"dsh-linux-desktop-use","text":"操控本机 Linux 图形桌面…"}'
 ```
 
 本机已写入的备注：*操控本机 Linux 图形桌面：截图、点击/拖拽/滚动、键盘输入、窗口列举与激活。
@@ -145,7 +145,11 @@ curl -sS -X POST http://127.0.0.1:3080/dsh-market/note \
 ## 安装与验证
 
 ```bash
-# 安装到 DSH profile
+# 从 npm 安装（发布后可用，支持指定版本）
+plugin_manager install_bundle dsh-linux-desktop-use
+plugin_manager install_bundle dsh-linux-desktop-use@1.5.0
+
+# 本地开发：以链接方式安装到 DSH profile
 plugin_manager install_bundle /home/sorc/workspaces/dsh-xfce-use/dsh-linux-desktop-use
 
 # 冒烟测试（假 ctx + 真实 X 会话）
@@ -157,3 +161,47 @@ cordis_inspect_query host Tool listTools   # 应看到 10 个 linux_* 工具
 
 > 本包以链接方式安装时，**改完代码需要让宿主重新加载模块**（重装一次 bundle 触发
 > `hmr.reconcileProfile` 驱逐旧的 ESM 缓存）；只改磁盘文件不会自动生效。
+
+> 包名从 `@local/dsh-linux-desktop-use` 改为 `dsh-linux-desktop-use`（见 CHANGELOG v1.5.0）。
+> 宿主的包元数据缓存以「基址 + 包名」为键，**改名后需要重新 `install_bundle` 一次**，
+> 否则宿主机仍会使用旧名字的缓存结果。
+
+## 发布到 npm（GitHub Actions 手动触发）
+
+仓库内置 [`.github/workflows/publish.yml`](./.github/workflows/publish.yml)，
+**只在 GitHub Actions 页面点击「Run workflow」时执行**，没有任何自动触发器
+（不打 tag、不随 push 构建、不定时发布）。
+
+### 前置配置（一次性）
+
+1. 在 npm 上确认包名 `dsh-linux-desktop-use` 可用（未被占用）。
+2. 在仓库 **Settings → Secrets and variables → Actions** 新建 secret：
+
+   | Secret | 值 | 用途 |
+   | --- | --- | --- |
+   | `NPM_TOKEN` | npm 的 Automation Token（Classic Token 勾选 publish） | 发布权限 |
+
+3. npm 账号需要开通 **Two-factor authentication**（npm 现在强制要求）。
+
+### 执行方式
+
+在 GitHub 仓库页 → **Actions** → 左侧选择「打包并发布到 npm」→ 右侧 **Run workflow**，
+勾选输入项：
+
+| 输入项 | 默认 | 说明 |
+| --- | --- | --- |
+| `publish` | `false` | 是否真正发布到 npm；`false` 时只打包并产出 `dsh-linux-desktop-use-<version>.tgz` 供下载 |
+| `dry_run` | `false` | 发布演练：`npm publish --dry-run`，不真正上传（需同时勾选 `publish`） |
+| `provenance` | `false` | 启用 npm provenance 签名（需仓库为公开仓库，且工作流已申请 `id-token: write`） |
+
+### 工作流做了什么
+
+| 阶段 | 步骤 |
+| --- | --- |
+| 打包 | 检出代码 → Node.js 20 → `node --check` 语法检查 → 校验 `package.json`（无 `private`、有 `version`）→ `npm pack` → 上传 tarball artifact |
+| 发布 | 仅当 `publish = true`：校验 `NPM_TOKEN` 存在 → 下载 tarball → 检查该版本是否已发布（已发布则报错退出）→ `npm publish --access public` → 回查 npm 上的版本与 tarball 地址 |
+
+> 版本号来自 `package.json`。重复发布同一版本会被 npm 拒绝，工作流也会提前拦截，
+> 因此每次发布前请先提升 `package.json` 的版本号并打上同名 tag。
+
+发布后即可通过 `plugin_manager install_bundle dsh-linux-desktop-use` 安装。

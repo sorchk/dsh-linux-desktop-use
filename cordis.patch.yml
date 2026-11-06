@@ -1,3 +1,3 @@
 - insert:
     - id: dsh-linux-desktop-use
-      name: '@local/dsh-linux-desktop-use'
+      name: 'dsh-linux-desktop-use'
