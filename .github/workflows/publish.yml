@@ -135,14 +135,24 @@ jobs:
           PROVENANCE: ${{ inputs.provenance }}
         run: |
           set -euo pipefail
+          TARBALL=$(ls dist/*.tgz 2>/dev/null | head -n1 || true)
+          if [ -z "${TARBALL}" ]; then
+            echo "::error::未找到待发布的 tarball（dist/*.tgz）"
+            exit 1
+          fi
+          # 必须以 ./ 开头：npm 会把 "dist/xxx.tgz" 当成 GitHub 简写（owner/repo），
+          # 转成 ssh://git@github.com/dist/xxx.tgz.git 去克隆，
+          # CI 无 SSH key 时必然报 "Permission denied (publickey)"（exit code 128）。
+          TARBALL="./${TARBALL}"
+          echo "待发布 tarball: ${TARBALL}"
           if [ "${DRY_RUN}" = "true" ]; then
-            npm publish dist/*.tgz --dry-run --access public
+            npm publish "${TARBALL}" --dry-run --access public
             exit 0
           fi
           if [ "${PROVENANCE}" = "true" ]; then
-            npm publish dist/*.tgz --access public --provenance
+            npm publish "${TARBALL}" --access public --provenance
           else
-            npm publish dist/*.tgz --access public
+            npm publish "${TARBALL}" --access public
           fi
 
       - name: 校验发布结果

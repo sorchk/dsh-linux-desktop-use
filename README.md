@@ -147,7 +147,7 @@ curl -sS -X POST http://127.0.0.1:3080/dsh-market/note \
 ```bash
 # 从 npm 安装（发布后可用，支持指定版本）
 plugin_manager install_bundle dsh-linux-desktop-use
-plugin_manager install_bundle dsh-linux-desktop-use@1.5.0
+plugin_manager install_bundle dsh-linux-desktop-use@1.5.1
 
 # 本地开发：以链接方式安装到 DSH profile
 plugin_manager install_bundle /home/sorc/workspaces/dsh-xfce-use/dsh-linux-desktop-use
@@ -203,5 +203,10 @@ cordis_inspect_query host Tool listTools   # 应看到 10 个 linux_* 工具
 
 > 版本号来自 `package.json`。重复发布同一版本会被 npm 拒绝，工作流也会提前拦截，
 > 因此每次发布前请先提升 `package.json` 的版本号并打上同名 tag。
+
+> **注意**：发布时传给 npm 的 tarball 路径必须以 `./` 开头（如 `./dist/dsh-linux-desktop-use-1.5.1.tgz`）。
+> npm 会把 `dist/xxx.tgz` 这种「斜杠分隔」参数当成 GitHub 简写（`owner/repo`），
+> 转成 `ssh://git@github.com/dist/xxx.tgz.git` 去克隆；CI 没有 SSH key 时会报
+> `Permission denied (publickey)`、`npm error code 128`。这是 v1.5.0 首次发布失败的原因。
 
 发布后即可通过 `plugin_manager install_bundle dsh-linux-desktop-use` 安装。
