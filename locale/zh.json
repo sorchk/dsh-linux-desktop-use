@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Linux 电脑控制",
+    "description": "操控本机 Linux 图形桌面：截图、点击/拖拽/滚动、键盘输入与组合键、窗口列举与激活。适用于原生 X11 + XTEST 会话（XFCE/GNOME/KDE 等任意 X11 桌面；Wayland 原生会话不适用）。依赖 xdotool、scrot、ffmpeg、wmctrl，需与桌面同用户的 DISPLAY 与 XAUTHORITY；写操作须先截图观察并通过分级审批。"
+  }
+}

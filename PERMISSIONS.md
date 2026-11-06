@@ -1,0 +1,77 @@
+# 权限声明（PERMISSIONS）
+
+本文件逐项说明 `@local/dsh-linux-desktop-use` 在运行时会用到哪些系统能力、为什么需要、以及它**不需要**什么。
+声明同时以 `package.json → dsh.permissions` 的形式随包发布，便于宿主或审计工具直接读取。
+
+## 1. 能力总览
+
+| 能力 | 需要什么 | 用途 | 缺了会怎样 |
+| --- | --- | --- | --- |
+| 连接 X server | `DISPLAY`（本机 `:1`）+ `XAUTHORITY`（`~/.Xauthority`） | 所有截图与输入注入都发生在同一个 X 会话里 | 所有工具报错，提示检查桌面会话 |
+| 读取屏幕像素 | `scrot`（或 `ffmpeg -f x11grab` 兜底） | 生成模型可看的截图 | `linux_screenshot` 报错 |
+| 注入鼠标/键盘事件 | `xdotool`（走 XTEST 扩展） | 点击、拖拽、输入、按键、滚动 | 所有写工具报错 |
+| 枚举/激活窗口 | `wmctrl`（EWMH） | `linux_windows`、`linux_activate_window` | 两个工具报错，其余工具不受影响 |
+| 读取屏幕几何 | `xrandr`（或 `xdotool getdisplaygeometry`） | 换算坐标、判断边界 | 退化为 `xdotool` 取值 |
+| 启动子进程 | 宿主允许 `child_process`（本插件用 `execFile`，固定 argv，不经 shell） | 调用上述命令行工具 | 所有工具报错 |
+| 写临时文件 | `${TMPDIR:-/tmp}` 可写 | `scrot` 不能写管道，先落临时 PNG 再读回 | `linux_screenshot` 报错 |
+| 交图给模型 | `ctx.attachments.saveImage` | 把 PNG 转成模型可见的图片块 | 截图工具不注册 |
+| 人工审批 | `ctx.approval.request`（只认 `allowed-once`） | 写操作前的授权闸门 | 审批不可用时写操作一律拒绝 |
+| 详情页体检与配置 | 宿主 `webServer` 的两条 exact 路由（`/dsh-linux-desktop-use/check`、`/config`） | 插件详情页的「检查依赖」按钮与配置面板；同源校验 | 无 webServer 的宿主上这两项不可用，其余工具不受影响 |
+
+## 2. 不需要什么
+
+* **不需要 root**。插件与 DSH 宿主同用户运行，X server 的访问控制由 Xauthority cookie 决定。
+* **不需要**额外授权工具（无 polkit / dbus 提权），也**不修改**系统设置。
+* **不需要网络**。全部为本地进程调用与本地文件读写，`dsh.permissions.externalServices` 为空。
+* **不接管**键盘/剪贴板之外的系统设施，不做窗口注入或抓包。
+
+## 3. 四道内置安全机制（P0）
+
+| 机制 | 实现位置 | 行为 |
+| --- | --- | --- |
+| 观察门禁 + 快照 TTL | `lib/observe.js` | 写操作前必须有一次新鲜的 `linux_screenshot`；默认 TTL 30 秒，过期/作废一律拒绝并提示重新观察 |
+| 危险语义分级审批 | `lib/guard.js` | 文本/按键/窗口标题命中删除、支付、凭据、破坏性命令四类语义时强制审批；`approvalMode` 可选 `all` / `dangerous` / `off` |
+| 坐标语义统一 | `lib/observe.js` + `lib/tools.js` | 截图返回 `origin_x/origin_y/scale/coordinate_space`；动作可用 `space=screen`（屏幕绝对像素）或 `space=local`（截图局部像素，自动换算） |
+| 打包权限声明 | `package.json → dsh.permissions` + 本文件 + `VERIFICATION.md` | 权限、命令、读写路径、失败边界、验证证据随包可审计 |
+
+## 4. 写操作与只读操作
+
+* 只读（不触发审批、不改桌面）：`linux_screenshot`、`linux_windows`、`linux_desktop_status`、`linux_check_env`。
+* 写（触发门禁 + 审批）：`linux_click`、`linux_drag`、`linux_type`、`linux_key`、`linux_scroll`、`linux_activate_window`。
+* `linux_move_mouse` 只移动指针，不改变任何应用状态，因此不触发审批，但仍需要新鲜的观察快照。
+
+## 4.1 详情页路由的写入面
+
+| 路由 | 会不会改东西 |
+| --- | --- |
+| `GET /dsh-linux-desktop-use/check` | 只读体检：不写任何文件，不触碰桌面 |
+| `GET /dsh-linux-desktop-use/config` | 只读：读取配置文件与生效值 |
+| `POST /dsh-linux-desktop-use/config` | **会写** `~/.config/dsh/linux-computer-use.json`（仅接受白名单内的键）；路由带同源校验，跨源请求 403 |
+
+## 5. 审批模式取值
+
+| `approvalMode` | 含义 |
+| --- | --- |
+| `all`（默认） | 所有写操作都申请一次审批 |
+| `dangerous` | 仅命中危险语义的写操作申请审批 |
+| `off` | 不申请审批（仅建议在隔离环境使用） |
+
+旧字段 `requireApproval` 仍兼容：`true` 等价 `all`，`false` 等价 `off`。
+
+## 6. 可配置项
+
+配置文件 `~/.config/dsh/linux-computer-use.json`（每次调用重新读取）：
+
+```json
+{
+  "display": ":1",
+  "xauthority": "/home/sorc/.Xauthority",
+  "approvalMode": "dangerous",
+  "ttlMs": 30000,
+  "allowedWindows": ["Thunar", "xterm"],
+  "timeoutMs": 20000
+}
+```
+
+环境变量优先级更高：`DSH_LINUX_DISPLAY`、`DSH_LINUX_XAUTHORITY`、`DSH_LINUX_APPROVAL_MODE`、
+`DSH_LINUX_TTL_MS`、`DSH_LINUX_ALLOWED_WINDOWS`、`DSH_LINUX_TIMEOUT_MS`、`DSH_LINUX_CONFIG`。

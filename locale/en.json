@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Linux Computer Use",
+    "description": "Drive the local Linux graphical desktop: screenshots, clicks, drags, scrolling, keyboard input and window listing/activation. Works on native X11 sessions with XTEST (XFCE, GNOME, KDE, any X11 desktop; not on native Wayland sessions). Requires xdotool, scrot, ffmpeg and wmctrl plus a DISPLAY/XAUTHORITY owned by the same user; write actions require a fresh screenshot and pass a graded approval."
+  }
+}
