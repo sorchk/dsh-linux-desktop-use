@@ -1,5 +1,30 @@
 # 更新日志
 
+### v1.6.0  2026-11-06
+
+新增应用、显示器与窗口几何控制能力，工具总数从 11 个增加到 17 个。
+
+1. 新增 `linux_apps`：读取 `/usr/share/applications` 与 `~/.local/share/applications` 下的
+   `.desktop` 条目，按 `WM_CLASS` 与运行中的窗口关联，输出已安装应用、正在运行的应用与窗口标题。
+2. 新增 `linux_launch_app`：按应用 id 或显示名启动应用。`Terminal=true` 的条目自动套用终端模拟器
+   参数（`xfce4-terminal --command=`、`gnome-terminal --`、`xterm -e` 等），并从宿主进程环境注入
+   `DBUS_SESSION_BUS_ADDRESS`，保证依赖会话总线的应用（文件管理器、设置程序等）能正常启动。
+3. 新增 `linux_activate_app`：按应用名或窗口标题子串聚焦正在运行的窗口。
+4. 新增 `linux_displays`：列出显示器与输出设备的分辨率、位置与主屏标记。
+5. 新增 `linux_set_window_frame`：移动 / 缩放窗口；最大化窗口会先解除最大化，
+   并按读取到的实际坐标收敛修正窗口装饰边框带来的偏移。
+6. 新增 `linux_verify_state`：断言窗口标题、焦点窗口与窗口数量，并基于截图时记录的灰度指纹
+   判断画面是否发生变化。
+7. 安全门禁扩展：`linux_launch_app` / `linux_activate_app` / `linux_set_window_frame` 纳入写操作
+   集合，自动获得作用域白名单、危险语义识别、分级审批与「动作后作废观察快照」；
+   `linux_verify_state` 保持只读，不解除观察门禁。
+8. `linux_screenshot` 在记录观察快照的同时记录画面指纹，供 `linux_verify_state` 比对。
+9. 新增 `lib/desktop-entries.js`（`.desktop` 解析）、`lib/apps.js`（应用索引与启动）、
+   `lib/verify.js`（指纹比对与断言求值）三个模块，并补充单元测试与 X 会话集成冒烟测试；
+   `package.json` 增加 `npm test` 脚本。
+10. 文档同步：README 补充新工具表格与说明，PERMISSIONS.md 与 VERIFICATION.md 补充新命令、
+    新读写路径与实机验证记录；`package.json` 版本升到 `1.6.0`。
+
 ### v1.5.4  2026-11-06
 
 补充 MIT 许可证。

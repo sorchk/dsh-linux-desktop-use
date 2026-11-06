@@ -20,9 +20,29 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 | `linux_activate_window` | 按 id 或标题子串激活窗口 | 写 |
 | `linux_desktop_status` | 显示屏、分辨率、指针位置、审批模式、观察快照状态等 | 只读 |
 | `linux_check_env` | 依赖体检：辅助程序、XTEST/EWMH、DISPLAY/XAUTHORITY、配置文件 | 只读 |
+| `linux_apps` | 列出已安装应用与正在运行的应用（按窗口类名关联） | 只读 |
+| `linux_launch_app` | 按应用 id 或显示名启动应用 | 写 |
+| `linux_activate_app` | 按应用名或窗口标题聚焦正在运行的窗口 | 写 |
+| `linux_displays` | 列出显示器与输出设备（分辨率、位置、主屏标记） | 只读 |
+| `linux_set_window_frame` | 移动 / 缩放窗口（自动解除最大化） | 写 |
+| `linux_verify_state` | 断言窗口标题、焦点窗口、窗口数量，并判断画面是否变化 | 只读 |
 
 > **写操作必须先观察**：任何写工具执行前都需要一次新鲜的 `linux_screenshot`
 > （默认 TTL 30 秒）；写操作完成后快照作废（界面可能已变），下一次写需重新观察。
+
+### 应用与窗口的新增能力（v1.6.0 起）
+
+| 工具 | 输入 | 输出要点 | 备注 |
+| --- | --- | --- | --- |
+| `linux_apps` | `query?`、`include_hidden?` | `applications`（已安装）、`running`（正在运行，含窗口标题）、`counts` | 读取 `/usr/share/applications` 与 `~/.local/share/applications` 的 `.desktop` 条目，并按 `WM_CLASS` 关联运行中的窗口 |
+| `linux_launch_app` | `app`（必填）、`args?` | `command`、`argv`、`pid` | `Terminal=true` 的条目会自动套用终端模拟器（`xfce4-terminal --command=`、`gnome-terminal --`、`xterm -e` 等） |
+| `linux_activate_app` | `app`（必填）、`title_contains?` | `id`、`title`、`activatedBy`、`candidates` | 应用名先经 `.desktop` 条目解析出候选类名，再按类名或标题子串挑窗口 |
+| `linux_displays` | 无 | `monitors`、`outputs`、`count` | 主屏以 `monitors[].primary` 为准（`xrandr --current` 不带 `primary` 关键字） |
+| `linux_set_window_frame` | `window_id?` / `title_contains?`、`x`+`y`、`width`+`height` | `before`、`after`、`unmaximized` | 最大化窗口会先解除最大化；窗口装饰边框带来的位置偏移会自动按实际坐标收敛修正 |
+| `linux_verify_state` | `window_title_contains?`、`active_title_contains?`、`window_count?` | `checks`、`summary`、`screen_changed`、`changed_ratio` | 只读，不解除观察门禁；画面比对基于截图时记录的灰度指纹 |
+
+> `linux_launch_app` / `linux_activate_app` / `linux_set_window_frame` 属于写操作：
+> 纳入作用域白名单、危险语义识别与分级审批，动作后同样作废观察快照。
 
 ## 插件详情页：检查依赖 + 配置项
 
@@ -63,7 +83,8 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 | `scrot` | 屏幕/区域截图（失败时回退 `ffmpeg x11grab`） | 建议 |
 | `ffmpeg` | 截图回退实现 + 截图缩放 | 可选 |
 | `wmctrl` | 列出窗口、激活窗口（EWMH） | 建议 |
-| `xrandr` / `xprop` | 屏幕尺寸兜底 | 可选 |
+| `xrandr` / `xprop` | 屏幕尺寸兜底 + 显示器枚举（`linux_displays`） | 建议 |
+| `ffmpeg` | 截图回退实现、截图缩放 + 画面指纹计算（`linux_verify_state`） | 建议 |
 
 安装：
 
@@ -106,7 +127,8 @@ curl -sS -X POST http://127.0.0.1:3080/dsh-market/note \
   -d '{"name":"dsh-linux-desktop-use","text":"操控本机 Linux 图形桌面…"}'
 ```
 
-本机已写入的备注：*操控本机 Linux 图形桌面：截图、点击/拖拽/滚动、键盘输入、窗口列举与激活。
+本机已写入的备注：*操控本机 Linux 图形桌面：截图、点击/拖拽/滚动、键盘输入、窗口列举与激活，
+应用枚举/启动/聚焦、显示器枚举、窗口移动缩放、界面状态断言。
 适用于原生 X11+XTEST 会话（XFCE/GNOME/KDE 等任意 X11 桌面，Wayland 不适用）。
 依赖 xdotool、scrot、ffmpeg、wmctrl，需与桌面同用户的 DISPLAY/XAUTHORITY。*
 
@@ -155,8 +177,11 @@ plugin_manager install_bundle /home/sorc/workspaces/dsh-xfce-use/dsh-linux-deskt
 # 冒烟测试（假 ctx + 真实 X 会话）
 node /home/sorc/workspaces/dsh-xfce-use/scripts/smoke-test.mjs
 
+# 单元测试 + 集成冒烟（node:test，集成部分需要真实 X 会话，否则自动跳过）
+npm test
+
 # 确认宿主已注册工具
-cordis_inspect_query host Tool listTools   # 应看到 10 个 linux_* 工具
+cordis_inspect_query host Tool listTools   # 应看到 17 个 linux_* 工具
 ```
 
 > 本包以链接方式安装时，**改完代码需要让宿主重新加载模块**（重装一次 bundle 触发

@@ -10,8 +10,13 @@
 | 连接 X server | `DISPLAY`（本机 `:1`）+ `XAUTHORITY`（`~/.Xauthority`） | 所有截图与输入注入都发生在同一个 X 会话里 | 所有工具报错，提示检查桌面会话 |
 | 读取屏幕像素 | `scrot`（或 `ffmpeg -f x11grab` 兜底） | 生成模型可看的截图 | `linux_screenshot` 报错 |
 | 注入鼠标/键盘事件 | `xdotool`（走 XTEST 扩展） | 点击、拖拽、输入、按键、滚动 | 所有写工具报错 |
-| 枚举/激活窗口 | `wmctrl`（EWMH） | `linux_windows`、`linux_activate_window` | 两个工具报错，其余工具不受影响 |
+| 枚举/激活窗口 | `wmctrl`（EWMH） | `linux_windows`、`linux_activate_window`、`linux_activate_app` | 相关工具报错，其余工具不受影响 |
 | 读取屏幕几何 | `xrandr`（或 `xdotool getdisplaygeometry`） | 换算坐标、判断边界 | 退化为 `xdotool` 取值 |
+| 枚举显示器 | `xrandr --listmonitors` / `--current` | `linux_displays` 输出分辨率、位置与主屏标记 | 该工具报错，其余工具不受影响 |
+| 移动/缩放窗口 | `xdotool windowmove` / `windowsize`，必要时 `wmctrl -b remove,maximized_*` | `linux_set_window_frame` | 该工具报错，其余工具不受影响 |
+| 读取桌面条目 | `/usr/share/applications`、`~/.local/share/applications` 下的 `*.desktop`（只读） | `linux_apps` / `linux_launch_app` 的应用来源 | 没有条目时 `linux_apps` 返回空列表 |
+| 启动应用 | `child_process.spawn`（固定 argv，不经 shell），从 `.desktop` 的 `Exec` 字段取值 | `linux_launch_app` | 该工具报错 |
+| 读取宿主 D-Bus 地址 | `/proc/<pid>/environ`（只读，仅取 `DBUS_SESSION_BUS_ADDRESS`） | 让依赖会话总线的应用（文件管理器等）能正常启动 | 应用可能因缺少会话总线而启动失败 |
 | 启动子进程 | 宿主允许 `child_process`（本插件用 `execFile`，固定 argv，不经 shell） | 调用上述命令行工具 | 所有工具报错 |
 | 写临时文件 | `${TMPDIR:-/tmp}` 可写 | `scrot` 不能写管道，先落临时 PNG 再读回 | `linux_screenshot` 报错 |
 | 交图给模型 | `ctx.attachments.saveImage` | 把 PNG 转成模型可见的图片块 | 截图工具不注册 |
@@ -36,9 +41,12 @@
 
 ## 4. 写操作与只读操作
 
-* 只读（不触发审批、不改桌面）：`linux_screenshot`、`linux_windows`、`linux_desktop_status`、`linux_check_env`。
-* 写（触发门禁 + 审批）：`linux_click`、`linux_drag`、`linux_type`、`linux_key`、`linux_scroll`、`linux_activate_window`。
+* 只读（不触发审批、不改桌面）：`linux_screenshot`、`linux_windows`、`linux_desktop_status`、`linux_check_env`、
+  `linux_apps`、`linux_displays`、`linux_verify_state`。
+* 写（触发门禁 + 审批）：`linux_click`、`linux_drag`、`linux_type`、`linux_key`、`linux_scroll`、`linux_activate_window`、
+  `linux_launch_app`、`linux_activate_app`、`linux_set_window_frame`。
 * `linux_move_mouse` 只移动指针，不改变任何应用状态，因此不触发审批，但仍需要新鲜的观察快照。
+* `linux_verify_state` 保持只读：它会刷新观察快照里的画面指纹基线，但不会解除观察门禁本身。
 
 ## 4.1 详情页路由的写入面
 

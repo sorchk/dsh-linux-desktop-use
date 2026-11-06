@@ -39,7 +39,7 @@
 
 | 检查 | 方法 | 结果 |
 | --- | --- | --- |
-| 工具注册 | `cordis_inspect_query(host, Tool, listTools)` | 11 个 `linux_*` 工具全部可见：`linux_screenshot`、`linux_click`、`linux_move_mouse`、`linux_drag`、`linux_type`、`linux_key`、`linux_scroll`、`linux_windows`、`linux_activate_window`、`linux_desktop_status`、`linux_check_env` |
+| 工具注册 | `cordis_inspect_query(host, Tool, listTools)` | v1.5.x 为 11 个 `linux_*` 工具；v1.6.0 起增加 `linux_apps`、`linux_launch_app`、`linux_activate_app`、`linux_displays`、`linux_set_window_frame`、`linux_verify_state`，共 17 个 |
 | 审批闸门（真实会话） | 子代理会话调用 `linux_scroll`（会走 `approve()`） | 返回 `Error: 桌面操作未获批准（审批结果：rejected）` → 闸门真实生效 |
 | 审批豁免对照 | 同会话调用 `linux_move_mouse` | 直接成功（该工具只读+不审批，符合设计） |
 | 服务依赖 | `cordis_inspect_query(host, Service, listService)` | `tools`、`attachments`、`approval`、`computerUse`、`hmr`、`webServer` 等在线 |
@@ -113,3 +113,40 @@
 | 包元数据可发布 | `package.json` | 已去掉 `private: true`，含 `publishConfig.access: public`、`repository`、`engines.node >= 20` |
 
 > 实际发布需要仓库 Secret `NPM_TOKEN`，只能在 GitHub Actions 页面手动触发后验证。
+
+## 9. 应用 / 显示器 / 窗口几何能力验证（v1.6.0）
+
+验证方式：`node --test "test/*.test.js"`（单元测试 + X 会话集成冒烟，`test/integration.test.js`）。
+
+### 9.1 自动化测试
+
+| 检查 | 方法 | 结果 |
+| --- | --- | --- |
+| 全部用例 | `npm test` | 60 个用例全部通过（单元 51 + 集成冒烟 9）：apps 18、desktop-entries 7、integration 9、observe 5、tools 6、verify 9、x11-parse 6 |
+| 桌面条目解析 | `test/desktop-entries.test.js` | 本地化名称、`Terminal`、`NoDisplay`、`StartupWMClass`、`[Desktop Action]` 子组、`Exec` 字段码剥离均正确 |
+| 应用索引与匹配 | `test/apps.test.js` | 同可执行名时优先匹配主条目（`thunar` 优于 `thunar-bulk-rename`）；隐藏条目只在无可见匹配时兜底 |
+| 终端参数 | `test/apps.test.js` | `xfce4-terminal` → `--command=htop`；`gnome-terminal` → `-- htop`；`xterm` / `konsole` → `-e htop` |
+| 指纹比对 | `test/verify.test.js` | 相同画面 `changedRatio = 0`；不同画面给出非零比例 |
+| 工具契约 | `test/tools.test.js` | 17 个工具齐全；三个新写工具在 `WRITE_TOOLS` 内；只读工具不在；每个工具具备参数 schema 与输出 schema |
+| 集成冒烟 | `test/integration.test.js` | 显示器枚举、应用列表与过滤、窗口断言、截图指纹比对、窗口移动缩放、参数校验、应用聚焦共 9 项全通过 |
+
+### 9.2 实机观测
+
+| 观测项 | 实测值 |
+| --- | --- |
+| `xrandr --listmonitors` | `Monitors: 1`，` 0: +VNC-0 1882/498x1040/275+0+0  VNC-0`（`+` 表示主屏） |
+| `xrandr --current` | `VNC-0 connected 1882x1040+0+0 0mm x 0mm` + 14 个模式；**不含 `primary` 关键字** → 主屏以 `monitors[].primary` 为准 |
+| `wmctrl -lx -G -p` | 行格式 `id desktop pid x y w h WM_CLASS host title…`，`WM_CLASS` 形如 `chromium.Chromium`、`Thunar.Thunar` |
+| 已安装 `.desktop` | `/usr/share/applications` 52 个 + `~/.local/share/applications` 5 个；其中 `NoDisplay=true` 9 个、`Terminal=true` 3 个 |
+| 运行中应用关联 | 修复打分前 `Thunar` 被误配到 `thunar-bulk-rename`、`Xfce4-terminal` 被误配到 `xfce4-terminal-settings`；修复后分别正确关联 `thunar`、`xfce4-terminal` |
+| 窗口位置偏移 | XFCE 4.18 装饰边框使实际位置比请求值大 `(+2, +56)`；`xprop -id <id> _NET_FRAME_EXTENTS` → `1, 1, 28, 1`；尺寸（宽高）完全准确。`lib/x11.js` 的 `moveWindowTo` 会读回实际坐标并按差值二次修正，最多 3 次收敛 |
+| 启动应用 | `linux_launch_app app=xterm` 成功（`{"app":"debian-xterm","command":"xterm"}`，窗口出现）；`linux_launch_app app=htop` 生成 `{"command":"/usr/bin/xfce4-terminal","argv":["--command=htop"],"terminal":true}` |
+
+### 9.3 已知限制
+
+* `linux_apps` 的运行中应用按 `WM_CLASS` 关联 `.desktop` 条目：桌面组件类窗口（`Xfce4-panel`、`Xfdesktop`）没有对应的主条目，会显示为无匹配条目。
+* 区域截图是**屏幕区域**而非窗口原生内容：被遮挡时拍到的是上层窗口（`xwd` 未安装，无法做窗口原生截取）。
+* `linux_launch_app` 对依赖 D-Bus 会话总线的应用（文件管理器、系统设置等）需要宿主进程具备
+  `DBUS_SESSION_BUS_ADDRESS`。插件会先从自身环境读取，再从运行中窗口的 `/proc/<pid>/environ` 兜底查找；
+  若两者都取不到，应用可能因无法连接会话总线而启动失败。
+* `linux_verify_state` 的画面比对基于 64×36 灰度指纹，适合判断「界面是否变化」，不适合判断细微差异。

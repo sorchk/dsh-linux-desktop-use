@@ -152,58 +152,58 @@ export async function captureFingerprint(env, data) -> Buffer|null  // ffmpeg �
 
 ### Task 1：`lib/desktop-entries.js` + 单测
 
-- [ ] 写失败测试 `test/desktop-entries.test.js`（解析 zh_CN 本地化名、Terminal/NoDisplay、Action 计数、Exec 字段码剥离）
-- [ ] `node --test test/desktop-entries.test.js` → 确认失败（模块不存在）
-- [ ] 实现 `lib/desktop-entries.js`
-- [ ] `node --test test/desktop-entries.test.js` → 全绿
-- [ ] commit：`新增 .desktop 解析模块与单元测试`
+- [x] 写失败测试 `test/desktop-entries.test.js`（解析 zh_CN 本地化名、Terminal/NoDisplay、Action 计数、Exec 字段码剥离）
+- [x] `node --test test/desktop-entries.test.js` → 确认失败（模块不存在）
+- [x] 实现 `lib/desktop-entries.js`
+- [x] `node --test test/desktop-entries.test.js` → 全绿
+- [x] commit：`新增 .desktop 解析模块与单元测试`
 
 ### Task 2：`lib/apps.js` 索引与匹配 + 单测
 
-- [ ] 写失败测试 `test/apps.test.js`（扫描目录、WM_CLASS 匹配四样本、findApp、buildLaunchPlan 的 Terminal 包裹与字段码清理）
-- [ ] 跑测试确认失败
-- [ ] 实现 `lib/apps.js`（不含 spawn 启动，spawn 放 Task 4）
-- [ ] 跑测试确认通过
-- [ ] commit：`新增应用索引与 WM_CLASS 匹配模块`
+- [x] 写失败测试 `test/apps.test.js`（扫描目录、WM_CLASS 匹配四样本、findApp、buildLaunchPlan 的 Terminal 包裹与字段码清理）
+- [x] 跑测试确认失败
+- [x] 实现 `lib/apps.js`（不含 spawn 启动，spawn 放 Task 4）
+- [x] 跑测试确认通过
+- [x] commit：`新增应用索引与 WM_CLASS 匹配模块`
 
 ### Task 3：`lib/verify.js` 指纹与断言 + 单测
 
-- [ ] 写失败测试 `test/verify.test.js`（相同/不同指纹的 changedRatio、长度不同、窗口断言求值）
-- [ ] 跑测试确认失败
-- [ ] 实现 `lib/verify.js`
-- [ ] 跑测试确认通过
-- [ ] commit：`新增画面指纹比对与状态断言模块`
+- [x] 写失败测试 `test/verify.test.js`（相同/不同指纹的 changedRatio、长度不同、窗口断言求值）
+- [x] 跑测试确认失败
+- [x] 实现 `lib/verify.js`
+- [x] 跑测试确认通过
+- [x] commit：`新增画面指纹比对与状态断言模块`
 
 ### Task 4：`lib/x11.js` 扩展 + `lib/observe.js` 指纹
 
-- [ ] 写失败测试 `test/x11-parse.test.js`（wmctrl -lx 输出解析、xrandr --listmonitors 解析）
-- [ ] 跑测试确认失败
-- [ ] 实现 `listWindowsWithClass` / `listDisplays` / `setWindowFrame` / `captureFingerprint`
-- [ ] `recordObservation` 增加 `fingerprint` / `fingerprintRegion`，作废时保留
-- [ ] 跑测试确认通过
-- [ ] commit：`扩展 X11 层：窗口类名、显示器、窗口几何与屏幕指纹`
+- [x] 写失败测试 `test/x11-parse.test.js`（wmctrl -lx 输出解析、xrandr --listmonitors 解析）
+- [x] 跑测试确认失败
+- [x] 实现 `listWindowsWithClass` / `listDisplays` / `setWindowFrame` / `captureFingerprint`
+- [x] `recordObservation` 增加 `fingerprint` / `fingerprintRegion`，作废时保留
+- [x] 跑测试确认通过
+- [x] commit：`扩展 X11 层：窗口类名、显示器、窗口几何与屏幕指纹`
 
 ### Task 5：注册 6 个工具 + guard 接入
 
-- [ ] 写失败测试 `test/tools.test.js`（工具注册表包含 6 个新名字；3 个写工具在 `WRITE_TOOLS` 中）
-- [ ] 跑测试确认失败
-- [ ] `lib/guard.js`：加入 `WRITE_TOOLS` 与 `describeAction` 文案
-- [ ] `lib/tools.js`：实现 6 个工具（`linux_launch_app` 用 `spawn` 启动，注入 DISPLAY/XAUTHORITY/DBUS）
-- [ ] 跑测试确认通过
-- [ ] commit：`新增应用管理、显示器、窗口几何与状态校验工具`
+- [x] 写失败测试 `test/tools.test.js`（工具注册表包含 6 个新名字；3 个写工具在 `WRITE_TOOLS` 中）
+- [x] 跑测试确认失败
+- [x] `lib/guard.js`：加入 `WRITE_TOOLS` 与 `describeAction` 文案
+- [x] `lib/tools.js`：实现 6 个工具（`linux_launch_app` 用 `spawn` 启动，注入 DISPLAY/XAUTHORITY/DBUS）
+- [x] 跑测试确认通过
+- [x] commit：`新增应用管理、显示器、窗口几何与状态校验工具`
 
 ### Task 6：集成冒烟（真实 X 会话）
 
-- [ ] 写 `test/integration.test.js`：检测不到 X 时自动跳过；覆盖 `linux_apps` / `linux_displays` / `linux_set_window_frame` / `linux_verify_state` 的真实调用
-- [ ] 在本机 X 会话（DISPLAY=:1）下跑通
-- [ ] commit：`新增 X 会话集成测试`
+- [x] 写 `test/integration.test.js`：检测不到 X 时自动跳过；覆盖 `linux_apps` / `linux_displays` / `linux_set_window_frame` / `linux_verify_state` 的真实调用
+- [x] 在本机 X 会话（DISPLAY=:1）下跑通
+- [x] commit：`新增 X 会话集成测试`
 
 ### Task 7：文档与版本
 
-- [ ] `README.md`：工具表补 6 行、安全机制说明补新写工具、依赖说明补 xrandr/wmctrl 用途
-- [ ] `CHANGELOG.md`：新增 `v1.6.0` 条目
-- [ ] `PERMISSIONS.md`：补新增命令（wmctrl -lx / xrandr --listmonitors / xdotool windowmove / spawn 的 Exec）
-- [ ] `VERIFICATION.md`：补 6 项实机验证记录
-- [ ] `package.json`：版本 `1.6.0`、`scripts.test`、permissions.commands 补齐
-- [ ] commit：`同步文档并将版本升至 1.6.0`
-- [ ] 打 tag `v1.6.0` 并提交
+- [x] `README.md`：工具表补 6 行、安全机制说明补新写工具、依赖说明补 xrandr/wmctrl 用途
+- [x] `CHANGELOG.md`：新增 `v1.6.0` 条目
+- [x] `PERMISSIONS.md`：补新增命令（wmctrl -lx / xrandr --listmonitors / xdotool windowmove / spawn 的 Exec）
+- [x] `VERIFICATION.md`：补 6 项实机验证记录
+- [x] `package.json`：版本 `1.6.0`、`scripts.test`、permissions.commands 补齐
+- [x] commit：`同步文档并将版本升至 1.6.0`
+- [x] 打 tag `v1.6.0` 并提交
