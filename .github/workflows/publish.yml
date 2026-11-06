@@ -168,14 +168,18 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
-          # npm registry 存在秒级传播延迟，最多重试 5 次
-          for i in 1 2 3 4 5; do
-            if npm view "dsh-linux-desktop-use@${VERSION}" version dist.tarball; then
+          # npm registry 存在传播延迟（新版本通常几十秒~几分钟才可被回查查到），
+          # 之前只重试 5 次 × 5 秒会在发布其实已成功的情况下误报失败。
+          # 显式指定 registry，避免继承宿主 .npmrc 指向的镜像源而查不到新版本。
+          MAX_RETRY=20
+          for i in $(seq 1 $MAX_RETRY); do
+            if npm view "dsh-linux-desktop-use@${VERSION}" version dist.tarball \
+                 --registry=https://registry.npmjs.org; then
               echo "::notice::版本 ${VERSION} 已在 npm registry 上确认发布成功"
               exit 0
             fi
-            echo "::notice::第 ${i} 次回查未查到版本 ${VERSION}，5 秒后重试"
-            sleep 5
+            echo "::notice::第 ${i}/${MAX_RETRY} 次回查未查到版本 ${VERSION}，15 秒后重试"
+            sleep 15
           done
-          echo "::error::发布后在 npm registry 上未查到版本 ${VERSION}"
+          echo "::error::发布后在 npm registry 上未查到版本 ${VERSION}（发布可能仍已成功，请到 npmjs.com 手动确认）"
           exit 1
