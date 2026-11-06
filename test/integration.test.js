@@ -6,7 +6,10 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, execFile } from 'node:child_process'
+import { mkdtempSync, writeFileSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { createTools } from '../lib/tools.js'
 import { clearObservation } from '../lib/observe.js'
 import { buildEnv, detectDisplay, detectXauthority } from '../lib/x11.js'
@@ -72,6 +75,32 @@ async function call(name, args = {}) {
 /** 采一张新观察，写操作的前置条件。 */
 async function observe() {
   return call('linux_screenshot', { target: 'screen' })
+}
+
+/**
+ * 判断 AT-SPI 依赖是否就绪：python3 的 gi/Atspi 绑定能导入，
+ * 且无障碍总线 socket 存在。
+ * @returns {Promise<{ok:boolean,reason:string}>} 检测结果。
+ */
+async function checkA11yReady() {
+  const busPath = `/run/user/${typeof process.getuid === 'function' ? process.getuid() : 0}/at-spi/bus`
+  if (!existsSync(busPath)) {
+    return { ok: false, reason: '无障碍总线不存在（需要 at-spi2-core）' }
+  }
+  return new Promise(resolve => {
+    execFile(
+      'python3',
+      ['-c', 'import gi; gi.require_version("Atspi", "2.0"); from gi.repository import Atspi; print("ok")'],
+      { timeout: 10000 },
+      (error, stdout) => {
+        if (error) {
+          resolve({ ok: false, reason: 'python3 缺少 gi/Atspi 绑定' })
+          return
+        }
+        resolve(/ok/.test(stdout) ? { ok: true, reason: '' } : { ok: false, reason: 'python3 缺少 gi/Atspi 绑定' })
+      },
+    )
+  })
 }
 
 test('集成：真实 X 会话', { skip: hasX ? false : '没有可用的 X 会话' }, async (t) => {
@@ -208,4 +237,120 @@ test('集成：真实 X 会话', { skip: hasX ? false : '没有可用的 X 会�
       /没有找到正在运行的应用/,
     )
   })
+})
+
+/**
+ * AT-SPI 集成用例。
+ *
+ * 依赖系统装了 at-spi2-core / libatk-adaptor 与 python3-gi，缺任一项时整组跳过。
+ */
+test('集成：AT-SPI 无障碍树', { skip: hasX ? false : '没有可用的 X 会话' }, async (t) => {
+  const a11yReady = await checkA11yReady()
+  if (!a11yReady.ok) {
+    t.skip(a11yReady.reason)
+    return
+  }
+
+  // 起一个自己的 GTK 应用作为被测对象，避免打扰用户正在使用的窗口。
+  const dir = mkdtempSync(path.join(tmpdir(), 'dsh-a11y-'))
+  const scriptPath = path.join(dir, 'dsh-a11y-app.py')
+  writeFileSync(
+    scriptPath,
+    [
+      'import gi',
+      "gi.require_version('Gtk', '3.0')",
+      'from gi.repository import Gtk, GLib',
+      "w = Gtk.Window(title='dsh-a11y-test')",
+      "e = Gtk.Entry()",
+      "e.set_text('original-value')",
+      "b = Gtk.Button(label='Target Button')",
+      'box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)',
+      'box.pack_start(e, False, False, 0)',
+      'box.pack_start(b, False, False, 0)',
+      'w.add(box)',
+      'w.show_all()',
+      'GLib.timeout_add(60000, Gtk.main_quit)',
+      'Gtk.main()',
+    ].join('\n'),
+  )
+
+  const child = spawn('python3', [scriptPath], {
+    detached: true,
+    stdio: 'ignore',
+    env: buildEnv({ display, xauthority }),
+  })
+  child.unref()
+
+  try {
+    const appName = 'dsh-a11y-app.py'
+
+    await t.test('linux_app_state 列出应用与控件', async () => {
+      let state = null
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        state = await call('linux_app_state', { app: appName })
+        if (state.apps.length > 0) break
+      }
+      assert.ok(state, '必须返回结果')
+      assert.equal(state.apps.length, 1, '应当只列出测试应用')
+      assert.equal(state.apps[0].name, appName)
+      assert.ok(state.apps[0].nodes.length > 0, '应用应当有控件节点')
+      assert.ok(state.counts.nodes > 0)
+    })
+
+    await t.test('linux_app_state 能按角色与名字过滤控件', async () => {
+      const byRole = await call('linux_app_state', { app: appName, role: 'push button' })
+      assert.equal(byRole.nodes.length, 1)
+      assert.equal(byRole.nodes[0].name, 'Target Button')
+      assert.ok(byRole.nodes[0].box.width > 0, '控件必须带屏幕坐标')
+
+      const byName = await call('linux_app_state', { app: appName, name_contains: 'Target' })
+      assert.equal(byName.nodes.length, 1)
+    })
+
+    await t.test('linux_app_state 能直读控件文本', async () => {
+      const text = await call('linux_app_state', { app: appName, role: 'text' })
+      assert.equal(text.nodes.length, 1)
+      assert.equal(text.nodes[0].text, 'original-value')
+    })
+
+    await t.test('linux_set_value 写入控件文本', async () => {
+      await observe()
+      const value = await call('linux_set_value', {
+        app: appName,
+        role: 'text',
+        value: 'written-by-tool',
+      })
+      assert.equal(value.before, 'original-value')
+      assert.equal(value.after, 'written-by-tool')
+      assert.equal(value.changed, true)
+      assert.ok(Array.isArray(value.risks))
+
+      // 复读确认真的写进去了。
+      const after = await call('linux_app_state', { app: appName, role: 'text' })
+      assert.equal(after.nodes[0].text, 'written-by-tool')
+    })
+
+    await t.test('linux_set_value 参数校验', async () => {
+      await assert.rejects(() => call('linux_set_value', { app: appName }), /value|必须/i)
+      await assert.rejects(
+        () => call('linux_set_value', { app: 'no-such-app-xyz', value: 'x' }),
+        /没有找到应用/,
+      )
+    })
+
+    await t.test('linux_app_state 找不到应用时返回空列表', async () => {
+      // 计划里的约定：应用可能还没注册到总线，此时返回空列表而不是报错。
+      const value = await call('linux_app_state', { app: 'no-such-app-xyz' })
+      assert.equal(value.apps.length, 0)
+      assert.equal(value.counts.apps, 0)
+      assert.equal(value.counts.nodes, 0)
+    })
+  } finally {
+    try {
+      process.kill(-child.pid)
+    } catch {
+      // 测试进程可能已经退出
+    }
+  }
 })
