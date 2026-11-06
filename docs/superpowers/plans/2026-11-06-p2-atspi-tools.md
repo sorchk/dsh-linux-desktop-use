@@ -211,54 +211,54 @@ export async function runA11y(env, request, { timeoutMs }) -> object // spawn py
 
 ### Task 1：`lib/atspi.js` 纯逻辑 + 单测
 
-- [ ] 写失败测试 `test/atspi.test.js`：`buildA11yEnv`（带 DISPLAY/XAUTHORITY/DBUS 地址）、
+- [x] 写失败测试 `test/atspi.test.js`：`buildA11yEnv`（带 DISPLAY/XAUTHORITY/DBUS 地址）、
       `buildA11yRequest`、`parseA11yResponse`（合法 / 非法 JSON / ok:false）、
       `trimTree`（深度裁剪）、`collectNodes`（扁平化 + role/name 筛选）、
       `pickEditableNode`（优先可编辑节点）、`nodeBox` / `nodeCenter`、
       `isA11yUnavailable`（识别依赖缺失类错误）
-- [ ] 跑测试确认失败（模块不存在）
-- [ ] 实现 `lib/atspi.js`
-- [ ] 跑测试确认通过
-- [ ] commit：`新增 AT-SPI 桥接模块与单元测试`
+- [x] 跑测试确认失败（模块不存在）
+- [x] 实现 `lib/atspi.js`
+- [x] 跑测试确认通过
+- [x] commit：`新增 AT-SPI 桥接模块与单元测试`
 
 ### Task 2：`lib/atspi.py` 采集脚本
 
-- [ ] 写脚本（ping / tree / setValue 三个 op，异常一律转 JSON 错误）
-- [ ] 用临时 python 脚本本地验证脚本能返回正确 JSON（不进单元测试）
-- [ ] commit：`新增 AT-SPI 采集脚本`
+- [x] 写脚本（ping / tree / setValue 三个 op，异常一律转 JSON 错误）
+- [x] 用临时 python 脚本本地验证脚本能返回正确 JSON（不进单元测试）
+- [x] commit：`新增 AT-SPI 采集脚本`
 
 ### Task 3：注册两个工具 + guard 接入
 
-- [ ] 扩展 `test/tools.test.js`：`linux_app_state` / `linux_set_value` 已注册、
+- [x] 扩展 `test/tools.test.js`：`linux_app_state` / `linux_set_value` 已注册、
       各自具备参数与输出 schema、`linux_set_value` 在 `WRITE_TOOLS` 内
-- [ ] 跑测试确认失败
-- [ ] `lib/guard.js`：WRITE_TOOLS + 风险信号 + describeAction
-- [ ] `lib/tools.js`：实现两个工具
-- [ ] 跑测试确认通过
-- [ ] commit：`新增无障碍树读取与控件赋值工具`
+- [x] 跑测试确认失败
+- [x] `lib/guard.js`：WRITE_TOOLS + 风险信号 + describeAction
+- [x] `lib/tools.js`：实现两个工具
+- [x] 跑测试确认通过
+- [x] commit：`新增无障碍树读取与控件赋值工具`
 
 ### Task 4：依赖体检扩展
 
-- [ ] 扩展 `test/diagnostics.test.js`（若无则新建）：`a11y` 段字段与 `available` 判定
-- [ ] 跑测试确认失败
-- [ ] `lib/diagnostics.js`：新增 a11y 段与 info 级 issue
-- [ ] 跑测试确认通过
-- [ ] commit：`依赖体检新增 AT-SPI 能力检查`
+- [x] 扩展 `test/diagnostics.test.js`（若无则新建）：`a11y` 段字段与 `available` 判定
+- [x] 跑测试确认失败
+- [x] `lib/diagnostics.js`：新增 a11y 段与 info 级 issue
+- [x] 跑测试确认通过
+- [x] commit：`依赖体检新增 AT-SPI 能力检查`
 
 ### Task 5：集成冒烟
 
-- [ ] 扩展 `test/integration.test.js`：真实 AT-SPI 会话下 `linux_app_state` 能列出应用、
+- [x] 扩展 `test/integration.test.js`：真实 AT-SPI 会话下 `linux_app_state` 能列出应用、
       `linux_set_value` 能写入并还原控件内容；条件不满足时自动跳过
-- [ ] 在本机跑通
-- [ ] commit：`补充 AT-SPI 集成冒烟测试`
+- [x] 在本机跑通
+- [x] commit：`补充 AT-SPI 集成冒烟测试`
 
 ### Task 6：文档与版本
 
-- [ ] `README.md`：工具表补 2 行 + 新增「AT-SPI 无障碍能力」小节 + 依赖说明补 python3/at-spi2-core
-- [ ] `CHANGELOG.md`：新增 `v1.7.0` 条目
-- [ ] `PERMISSIONS.md`：补 python3 子进程、AT-SPI 总线读取路径、失败边界
-- [ ] `VERIFICATION.md`：补第 10 节实机验证记录
-- [ ] `package.json`：版本 `1.7.0`、`files` 加 `lib/atspi.py`（已被 `lib/` 覆盖则无需改）、
+- [x] `README.md`：工具表补 2 行 + 新增「AT-SPI 无障碍能力」小节 + 依赖说明补 python3/at-spi2-core
+- [x] `CHANGELOG.md`：新增 `v1.7.0` 条目
+- [x] `PERMISSIONS.md`：补 python3 子进程、AT-SPI 总线读取路径、失败边界
+- [x] `VERIFICATION.md`：补第 10 节实机验证记录
+- [x] `package.json`：版本 `1.7.0`、`files` 加 `lib/atspi.py`（已被 `lib/` 覆盖则无需改）、
       permissions.commands 补 `python3 <script>`、readPaths 补 a11y 总线 socket
-- [ ] commit：`同步文档并将版本升至 1.7.0`
-- [ ] 打 tag `v1.7.0` 并提交
+- [x] commit：`同步文档并将版本升至 1.7.0`
+- [x] 打 tag `v1.7.0` 并提交

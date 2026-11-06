@@ -154,3 +154,47 @@
   `DBUS_SESSION_BUS_ADDRESS`。插件会先从自身环境读取，再从运行中窗口的 `/proc/<pid>/environ` 兜底查找；
   若两者都取不到，应用可能因无法连接会话总线而启动失败。
 * `linux_verify_state` 的画面比对基于 64×36 灰度指纹，适合判断「界面是否变化」，不适合判断细微差异。
+
+## 10. AT-SPI 无障碍能力验证（v1.7.0）
+
+验证方式：`node --test "test/*.test.js"`（单元测试 + X 会话集成冒烟），
+并在真实会话里用自建的 GTK3 测试应用做端到端验证。
+
+### 10.1 自动化测试
+
+| 检查 | 方法 | 结果 |
+| --- | --- | --- |
+| 全部用例 | `npm test` | 96 个用例全部通过（单元 80 + 集成冒烟 16）：apps 18、atspi 20、desktop-entries 7、diagnostics 5、integration 16、observe 5、tools 10、verify 9、x11-parse 6 |
+| 桥接层纯逻辑 | `test/atspi.test.js` | 环境拼装、请求构造、响应解析、树裁剪、角色/名称筛选、可编辑节点挑选、坐标计算、错误映射共 20 项全通过（不需要 X 会话与 python3） |
+| 依赖体检 | `test/diagnostics.test.js` | `a11y` 段的 `available` 判定：三项齐备 → 可用；缺 `python3` / `gi` / 总线 socket → 不可用并说明原因 |
+| 工具契约 | `test/tools.test.js` | 19 个工具齐全；`linux_set_value` 在 `WRITE_TOOLS` 内、`linux_app_state` 不在；两个工具的参数与输出 schema 齐全 |
+| 集成冒烟 | `test/integration.test.js` 的 AT-SPI 组 | 起一个 GTK3 测试应用，验证列树、按角色与名字过滤、直读文本、写入文本、参数校验共 6 项全通过 |
+
+### 10.2 实机观测
+
+| 观测项 | 实测值 |
+| --- | --- |
+| 依赖安装 | `sudo apt-get install -y at-spi2-core libatk-adaptor` 只需 2 个包；`python3-gi`、`gir1.2-atspi-2.0`、`libatspi2.0-0t64` 本机已有 |
+| 总线位置 | a11y 总线 socket 在 `/run/user/1000/at-spi/bus`；进程 `at-spi-bus-launcher` + `at-spi2-registryd` + 一个 `dbus-daemon(--config-file=/usr/share/defaults/at-spi2/accessibility.conf)` |
+| 会话总线对象路径 | 无障碍总线地址由**会话总线**的 `org.a11y.Bus.GetAddress` 提供，对象路径是 `/org/a11y/bus`（`/org/a11y/atspi/bus` 会报 "Object does not exist at path"） |
+| `linux_app_state` 输出 | 对 GTK3 测试应用返回 5 个节点；按 `role='push button'` 过滤得到 `push button "Target Button" box={"x":858,"y":554,"width":166,"height":26} path=0.0.1` |
+| `linux_set_value` 输出 | `{"app":"dsh-a11y-app.py","role":"text","path":"0.0.0","before":"original-value","after":"written-by-tool","changed":true}`；复读 AX 树确认文本已变 |
+| 体检输出 | `a11y.available = true`，`python3Path=/usr/bin/python3`，`busPath=/run/user/1000/at-spi/bus`，无 `a11y-unavailable` 提示 |
+
+### 10.3 已知限制
+
+* **目标应用必须在安装依赖之后重启**才会注册到无障碍总线：装依赖前启动的进程
+  （本机 11 月 1 日启动的 chromium、11 月 5 日启动的 xfce4-terminal）不会自动补注册。
+* **`select_text` 不可行**：GTK3 的 `TextView` 的 `get_selection_iface()` 返回 `None`，
+  缺少 `Selection` 接口，无法直接读取或设置选区。
+* **原生右键菜单不可行**：AX 树里没有 `menu` / `menu item` 角色，
+  只有控件自带的 `Action`（`do_action(0)` 可用，实测返回 `True`，动作名 `click`）。
+* **裸 D-Bus 拿不到应用清单**：直接用 `gdbus` / `busctl` 调
+  `org.a11y.atspi.Accessible.GetChildren` 恒返回空数组（`GetRoleName` 却能正确返回
+  `desktop frame`），应用清单只在 libatspi 内部路径暴露 —— 这也是桥接走
+  `python3` + `gi/Atspi` 子进程而不是裸 D-Bus 的原因。
+* **子进程必须有 `DISPLAY`**：只给 `DBUS_SESSION_BUS_ADDRESS` 而不给 `DISPLAY` 时，
+  `Atspi.get_desktop(0)` 返回 0 个应用。
+* 节点文本默认截断到 400 字符、子节点上限 200，避免整屏文本一次性进入模型上下文。
+* `python3 -c <script>` 启动的应用在总线上的应用名是 `-c` 而不是 `python3`，
+  按应用名过滤时要用真实应用名（写成脚本文件时即为脚本文件名）。

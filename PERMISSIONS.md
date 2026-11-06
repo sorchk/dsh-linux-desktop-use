@@ -36,6 +36,10 @@
 | 启动应用 | `child_process.spawn`（固定 argv，不经 shell），从 `.desktop` 的 `Exec` 字段取值 | `linux_launch_app` | 该工具报错 |
 | 读取宿主 D-Bus 地址 | `/proc/<pid>/environ`（只读，仅取 `DBUS_SESSION_BUS_ADDRESS`） | 让依赖会话总线的应用（文件管理器等）能正常启动 | 应用可能因缺少会话总线而启动失败 |
 | 启动子进程 | 宿主允许 `child_process`（本插件用 `execFile`，固定 argv，不经 shell） | 调用上述命令行工具 | 所有工具报错 |
+| 读取无障碍树 | `python3` + `python3-gi` + `gir1.2-atspi-2.0`（子进程，只读遍历 AX 树） | `linux_app_state` 读取控件角色、名称、坐标与文本 | 该工具报可读错误，其余工具不受影响 |
+| 写入控件文本 | 同上，走 `EditableText.set_text_contents` | `linux_set_value` 直接给控件赋值 | 该工具报可读错误，其余工具不受影响 |
+| 读取无障碍总线 | `/run/user/<uid>/at-spi/bus`（socket，只读） | 让 python 子进程连上 AT-SPI 总线 | 无障碍功能整体不可用 |
+| 读取桌面条目（AT-SPI 侧） | 无需额外权限：`lib/atspi.py` 只做遍历与接口调用 | 采集控件树 | — |
 | 写临时文件 | `${TMPDIR:-/tmp}` 可写 | `scrot` 不能写管道，先落临时 PNG 再读回 | `linux_screenshot` 报错 |
 | 交图给模型 | `ctx.attachments.saveImage` | 把 PNG 转成模型可见的图片块 | 截图工具不注册 |
 | 人工审批 | `ctx.approval.request`（只认 `allowed-once`） | 写操作前的授权闸门 | 审批不可用时写操作一律拒绝 |
@@ -60,9 +64,9 @@
 ## 4. 写操作与只读操作
 
 * 只读（不触发审批、不改桌面）：`linux_screenshot`、`linux_windows`、`linux_desktop_status`、`linux_check_env`、
-  `linux_apps`、`linux_displays`、`linux_verify_state`。
+  `linux_apps`、`linux_displays`、`linux_verify_state`、`linux_app_state`。
 * 写（触发门禁 + 审批）：`linux_click`、`linux_drag`、`linux_type`、`linux_key`、`linux_scroll`、`linux_activate_window`、
-  `linux_launch_app`、`linux_activate_app`、`linux_set_window_frame`。
+  `linux_launch_app`、`linux_activate_app`、`linux_set_window_frame`、`linux_set_value`。
 * `linux_move_mouse` 只移动指针，不改变任何应用状态，因此不触发审批，但仍需要新鲜的观察快照。
 * `linux_verify_state` 保持只读：它会刷新观察快照里的画面指纹基线，但不会解除观察门禁本身。
 
@@ -101,3 +105,26 @@
 
 环境变量优先级更高：`DSH_LINUX_DISPLAY`、`DSH_LINUX_XAUTHORITY`、`DSH_LINUX_APPROVAL_MODE`、
 `DSH_LINUX_TTL_MS`、`DSH_LINUX_ALLOWED_WINDOWS`、`DSH_LINUX_TIMEOUT_MS`、`DSH_LINUX_CONFIG`。
+
+## 7. AT-SPI（无障碍）能力是可选增强
+
+`linux_app_state` / `linux_set_value` 依赖系统级的 AT-SPI 栈。**缺失或不可用时，只有这两个工具报错，
+其余 17 个工具完全不受影响**，依赖体检也只记一条 info 级提示（`a11y-unavailable`），不会判失败。
+
+安装依赖：
+
+```bash
+sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
+```
+
+| 失败边界 | 表现 | 处理 |
+| --- | --- | --- |
+| `python3` 缺失 | 报「AT-SPI 不可用」，并附安装命令 | 安装 `python3` |
+| `gi` / `Atspi` 绑定缺失 | 同上，错误里带原始原因 | 安装 `python3-gi` + `gir1.2-atspi-2.0` |
+| 无障碍总线未起 | 同上 | 安装 `at-spi2-core` + `libatk-adaptor` |
+| 目标应用没注册到总线 | `linux_app_state` 返回**空列表**（不报错）；`linux_set_value` 报「没有找到应用」 | 重启目标应用——**装依赖前启动的进程不会补注册** |
+| 子进程超时 | 报「AT-SPI 采集脚本超时（Nms）」 | 调大 `timeoutMs` |
+| 脚本返回非法 JSON | 报解析错误，并把 stderr 线索一并带出 | 检查 `lib/atspi.py` 是否被改动 |
+
+> **数据最小化**：控件文本默认截断（`MAX_TEXT_LENGTH = 400`），单节点子节点数上限 200，
+> 避免把整屏文本一次性灌进模型上下文。

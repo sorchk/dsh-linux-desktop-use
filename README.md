@@ -35,6 +35,8 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 | `linux_displays` | 列出显示器与输出设备（分辨率、位置、主屏标记） | 只读 |
 | `linux_set_window_frame` | 移动 / 缩放窗口（自动解除最大化） | 写 |
 | `linux_verify_state` | 断言窗口标题、焦点窗口、窗口数量，并判断画面是否变化 | 只读 |
+| `linux_app_state` | 读取运行中 GUI 应用的无障碍树（控件角色、名称、坐标、文本） | 只读 |
+| `linux_set_value` | 直接给某个可编辑控件写入文本（不走逐键模拟） | 写 |
 
 > **写操作必须先观察**：任何写工具执行前都需要一次新鲜的 `linux_screenshot`
 > （默认 TTL 30 秒）；写操作完成后快照作废（界面可能已变），下一次写需重新观察。
@@ -52,6 +54,34 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 
 > `linux_launch_app` / `linux_activate_app` / `linux_set_window_frame` 属于写操作：
 > 纳入作用域白名单、危险语义识别与分级审批，动作后同样作废观察快照。
+
+### AT-SPI 无障碍能力（v1.7.0 起）
+
+有了无障碍树（AX tree）之后，「找到某个控件」不再依赖截图上猜像素。
+
+| 工具 | 输入 | 输出要点 | 备注 |
+| --- | --- | --- | --- |
+| `linux_app_state` | `app?`、`role?`、`name_contains?`、`max_depth?` | `apps`（应用名 + pid + 控件节点）、`nodes`、`counts` | 每个节点带 `role`、`name`、`states`、`box`（屏幕绝对坐标）、`text`（文本直读）、`editable`、`actions` |
+| `linux_set_value` | `value`（必填）、`app?`、`role?`、`name_contains?` | `before`、`after`、`changed` | 写操作：走观察门禁 + 作用域白名单 + 分级审批，写后作废观察快照 |
+
+两条顺带解决的能力：
+
+* **元素级定位**：控件的 `box` 是屏幕绝对坐标，可以直接喂给 `linux_click`，
+  不必再从截图里目测位置；
+* **控件文本直读**：直接读 `Text` 接口，**不需要 OCR**，也不用把整屏文本灌进模型上下文。
+
+安装依赖（**可选增强**，不装不影响其余工具）：
+
+```bash
+sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
+```
+
+> **两个硬约束**：
+> 1. **目标应用必须在安装依赖之后重启**才会注册到无障碍总线——旧进程不会自动补注册；
+> 2. 依赖装好后要**重新加载宿主**（重装一次 bundle）才会看到新工具。
+>
+> `linux_check_env` 体检报告新增 `a11y` 段，逐项列出 `python3` / `gi` / 无障碍总线是否就绪；
+> 缺失时记一条 info 级提示，不会让体检判失败。
 
 ## 插件详情页：检查依赖 + 配置项
 
@@ -122,11 +152,15 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 | `wmctrl` | 列出窗口、激活窗口（EWMH） | 建议 |
 | `xrandr` / `xprop` | 屏幕尺寸兜底 + 显示器枚举（`linux_displays`） | 建议 |
 | `ffmpeg` | 截图回退实现、截图缩放 + 画面指纹计算（`linux_verify_state`） | 建议 |
+| `python3` + `python3-gi` + `gir1.2-atspi-2.0` | 无障碍树采集脚本（`linux_app_state` / `linux_set_value`） | 可选 |
+| `at-spi2-core` + `libatk-adaptor` | 无障碍总线与 ATK 桥接（让 GUI 应用暴露无障碍树） | 可选 |
 
 安装：
 
 ```bash
 sudo apt-get install -y xdotool scrot wmctrl ffmpeg
+# 可选：启用无障碍树能力
+sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
 ```
 
 ## 权限与运行环境
