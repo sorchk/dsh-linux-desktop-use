@@ -1,6 +1,6 @@
 {
   "name": "dsh-linux-desktop-use",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "type": "module",
   "description": "Control a local Linux graphical desktop from DeepSeek Harness: screenshot, mouse, keyboard, scroll, window, application, display and accessibility-tree (AT-SPI) tools. Requires a native X11 session with XTEST and the xdotool/scrot/ffmpeg/wmctrl binaries; the accessibility-tree tools additionally need at-spi2-core, libatk-adaptor and python3-gi. WARNING: an AI agent operating a computer can cause irreversible damage (deleting files, overwriting documents, leaking credentials, unintended payments); run it inside a sandbox or isolated desktop, never on a machine holding real accounts and production data.",
   "scripts": {
@@ -54,7 +54,7 @@
       ]
     },
     "permissions": {
-      "summary": "控制本机 Linux 图形桌面（原生 X11 + XTEST 会话，XFCE/GNOME/KDE 等任意 X11 桌面；Wayland 原生会话不适用）：截图、鼠标、键盘、滚动、窗口列举与激活、应用枚举/启动/聚焦、显示器枚举、窗口移动缩放、界面状态断言，以及可选的 AT-SPI 无障碍树读取与控件赋值。截图经 ctx.attachments.saveImage 交给模型，输入经 xdotool XTEST 注入同一 X 会话，无障碍树经 python3 + gi/Atspi 子进程读取。全部为同用户本地调用，不访问网络。风险：AI Agent 拥有真实鼠标键盘控制权，误判可造成不可逆破坏（误删文件、覆盖文档、泄露凭据、误发消息或误支付），建议只在沙盒 / 隔离桌面中使用，并保持 approvalMode=all 逐次审批。",
+      "summary": "控制本机 Linux 图形桌面（原生 X11 + XTEST 会话，XFCE/GNOME/KDE 等任意 X11 桌面；Wayland 原生会话不适用）：截图、鼠标、键盘、滚动、窗口列举与激活、应用枚举/启动/聚焦、显示器枚举、窗口移动缩放、界面状态断言，以及可选的 AT-SPI 无障碍树读取与控件赋值。详情页与 linux_check_env 共享同一份依赖清单（辅助程序 + 系统包），缺失依赖可一键安装。截图经 ctx.attachments.saveImage 交给模型，输入经 xdotool XTEST 注入同一 X 会话，无障碍树经 python3 + gi/Atspi 子进程读取。全部为同用户本地调用，不访问网络。风险：AI Agent 拥有真实鼠标键盘控制权，误判可造成不可逆破坏（误删文件、覆盖文档、泄露凭据、误发消息或误支付），建议只在沙盒 / 隔离桌面中使用，并保持 approvalMode=all 逐次审批。一键安装会在本机以 root 权限安装系统软件包（仅限目录登记的包），请在受信任的环境中确认后再执行。",
       "commands": [
         "xdotool getdisplaygeometry",
         "xdotool getmouselocation",
@@ -81,7 +81,13 @@
         "xdpyinfo",
         "ffmpeg -f x11grab -i <display> -frames:v 1 -f image2pipe -vcodec png pipe:1",
         "ffmpeg -i <png> -vf scale=64:36,format=gray -f rawvideo -pix_fmt gray pipe:1",
-        "python3 <bundle>/lib/atspi.py（AT-SPI 采集脚本，stdin 收 JSON / stdout 出 JSON）"
+        "python3 <bundle>/lib/atspi.py（AT-SPI 采集脚本，stdin 收 JSON / stdout 出 JSON）",
+        "dpkg-query -W -f ${Status}\\t${Version} <package>（依赖体检只读查询系统包状态）",
+        "dpkg -s <package>（dpkg-query 不可用时的回退查询）",
+        "sudo -n -v（检测免密提权，绝不索取密码）",
+        "sudo -n apt-get install -y <catalog-packages>（仅在详情页确认后执行缺失依赖安装）",
+        "pkexec apt-get install -y <catalog-packages>（无免密 sudo 时的 polkit 提权回退）",
+        "apt-get update（安装报 Unable to locate package 时刷新一次包索引）"
       ],
       "readPaths": [
         "~/.config/dsh/linux-computer-use.json",
@@ -91,11 +97,13 @@
         "/usr/share/applications/*.desktop",
         "~/.local/share/applications/*.desktop",
         "/proc/<pid>/environ（仅读取 D-Bus 会话总线地址）",
-        "/run/user/<uid>/at-spi/bus（无障碍总线 socket，只读）"
+        "/run/user/<uid>/at-spi/bus（无障碍总线 socket，只读）",
+        "/var/lib/dpkg/status（只读，查询系统包安装状态）"
       ],
       "writePaths": [
         "${TMPDIR:-/tmp}/dsh-linux-*.png（截图临时文件，读取后立即删除）",
-        "~/.config/dsh/linux-computer-use.json（仅当插件详情页保存配置或 linux_check_env 之外的配置接口写入）"
+        "~/.config/dsh/linux-computer-use.json（仅当插件详情页保存配置或 linux_check_env 之外的配置接口写入）",
+        "~/.local/state/dsh/linux-desktop-use-install.log（依赖安装审计日志，只追加）"
       ],
       "externalServices": [],
       "failureBoundaries": [
@@ -105,6 +113,11 @@
         "缺少 xdotool/scrot/ffmpeg/wmctrl 时 linux_desktop_status 会报告 binaries 缺失，其余工具报错",
         "DISPLAY/XAUTHORITY 探测失败时所有工具报错，提示检查桌面会话",
         "依赖体检只读：linux_check_env 与详情页的检查按钮不修改任何文件",
+        "依赖检查覆盖目录里的全部依赖（8 个辅助程序 + python3-gi/gir1.2-atspi-2.0/at-spi2-core/libatk-adaptor 等系统包），缺失项按 required/recommended/optional 分级上报",
+        "详情页的安装按钮只安装依赖目录里登记过的软件包，浏览器只能提交目录 id、不能提交任意包名",
+        "安装路由必须同源（带 Origin 且主机名匹配），跨站或缺少 Origin 的 POST 一律 403 拒绝",
+        "没有免密提权能力时安装任务直接失败并给出手动命令，插件绝不索取或代填密码",
+        "安装任务在后台执行并轮询结果，同时把每次尝试写入 ~/.local/state/dsh/linux-desktop-use-install.log 审计日志",
         "linux_apps 在没有可读 .desktop 条目时返回空列表而不是报错；窗口列表获取失败时按「无运行中窗口」处理",
         "linux_launch_app 找不到匹配条目时直接报错，不会尝试猜测可执行文件；启动后不等待窗口出现即返回 pid",
         "linux_activate_app 找不到运行中的匹配窗口时直接报错，不会误激活其他窗口",
@@ -122,6 +135,8 @@
         "linux_launch_app / linux_activate_app / linux_set_window_frame 完成后观察快照作废",
         "linux_verify_state 输出断言结论与画面变化比例",
         "体检报告新增 a11y 段：python3 / gi 绑定 / 无障碍总线三项是否就绪",
+        "体检报告的 dependencies 段逐条列出依赖目录中的每一项（类型、级别、用途、状态、提供者软件包），summary 给出 dependenciesPresent/dependenciesTotal/dependenciesMissing",
+        "详情页依赖清单下方按需出现「一键安装缺失依赖」按钮，二次确认后由 POST /dsh-linux-desktop-use/install 启动后台安装任务，GET /dsh-linux-desktop-use/install 轮询进度与输出",
         "linux_app_state 输出控件角色、名称、屏幕坐标与文本；linux_set_value 输出 before/after/changed",
         "PERMISSIONS.md 列出逐项权限来源",
         "VERIFICATION.md 记录实机验证步骤与结果"

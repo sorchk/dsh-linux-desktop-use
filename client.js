@@ -30,10 +30,6 @@ window.__ModuleLoader__.load({
         checking: '检查中…',
         sectionTitle: '桌面控制依赖体检',
         sectionIntro: '本插件通过 X11 控制本机 Linux 桌面。下面的体检结果由插件宿主实时提供，模型侧的 linux_check_env 工具读到的是同一份数据。',
-        binaryTitle: '依赖工具',
-        required: '必需',
-        optional: '可选',
-        present: '已安装',
         missing: '缺失',
         x11Title: 'X11 会话',
         xtest: 'XTEST（输入注入）',
@@ -62,16 +58,32 @@ window.__ModuleLoader__.load({
         reload: '重新检查',
         issues: '需要处理的问题',
         noIssues: '未发现问题',
+        depTitle: '依赖清单（程序 + 系统包）',
+        kindBinary: '程序',
+        kindPackage: '系统包',
+        needRequired: '必需',
+        needRecommended: '建议',
+        needOptional: '可选',
+        installed: '已安装',
+        installTitle: '安装缺失依赖',
+        installButton: '一键安装缺失依赖',
+        installConfirm: '确认安装',
+        installCancel: '取消',
+        installRunning: '安装中…',
+        installDone: '安装完成',
+        installFailed: '安装失败',
+        installNothing: '所有依赖都已就绪，无需安装。',
+        installPackages: '待安装软件包',
+        installCommand: '等价命令',
+        installPrivilege: '提权方式',
+        installOutput: '安装输出',
+        installDenied: '安装请求被拒绝',
       },
       en: {
         check: 'Check dependencies',
         checking: 'Checking…',
         sectionTitle: 'Desktop control dependency check',
         sectionIntro: 'This plugin drives the local Linux desktop through X11. The report below comes from the plugin Host at runtime; the model-facing linux_check_env tool reads the same data.',
-        binaryTitle: 'Helper binaries',
-        required: 'required',
-        optional: 'optional',
-        present: 'installed',
         missing: 'missing',
         x11Title: 'X11 session',
         xtest: 'XTEST (input injection)',
@@ -100,6 +112,26 @@ window.__ModuleLoader__.load({
         reload: 'Check again',
         issues: 'Issues to fix',
         noIssues: 'No issues found',
+        depTitle: 'Dependency checklist (binaries + packages)',
+        kindBinary: 'binary',
+        kindPackage: 'package',
+        needRequired: 'required',
+        needRecommended: 'recommended',
+        needOptional: 'optional',
+        installed: 'installed',
+        installTitle: 'Install missing dependencies',
+        installButton: 'Install missing dependencies',
+        installConfirm: 'Confirm install',
+        installCancel: 'Cancel',
+        installRunning: 'Installing…',
+        installDone: 'Installation finished',
+        installFailed: 'Installation failed',
+        installNothing: 'Every dependency is present; nothing to install.',
+        installPackages: 'Packages to install',
+        installCommand: 'Equivalent command',
+        installPrivilege: 'Privilege method',
+        installOutput: 'Installer output',
+        installDenied: 'Install request refused',
       },
     }
 
@@ -113,6 +145,10 @@ window.__ModuleLoader__.load({
       saving: false,
       saved: false,
       saveError: '',
+      installJob: null,
+      installing: false,
+      installError: '',
+      installConfirming: false,
       listeners: new Set(),
       subscribe(listener) {
         this.listeners.add(listener)
@@ -179,6 +215,41 @@ window.__ModuleLoader__.load({
       } catch (error) {
         store.update({ checkError: String(error?.message ?? error), checking: false })
       }
+    }
+
+    /**
+     * Start the one-click install of the missing dependencies.
+     *
+     * The Host answers immediately with a job; the install itself runs in the
+     * background because apt-get may take minutes.
+     */
+    async function runInstall(t) {
+      store.update({ installing: true, installError: '', installConfirming: false, installJob: null })
+      try {
+        const payload = await request('/install', { method: 'POST', body: JSON.stringify({}) })
+        store.update({ installJob: payload.job ?? null })
+        pollInstall(t)
+      } catch (error) {
+        store.update({ installing: false, installError: String(error?.message ?? error) })
+      }
+    }
+
+    function pollInstall(t) {
+      setTimeout(async () => {
+        try {
+          const payload = await request('/install')
+          const job = payload.job ?? null
+          store.update({ installJob: job })
+          if (job && job.status === 'running') {
+            pollInstall(t)
+            return
+          }
+          store.update({ installing: false })
+          await runCheck(t)
+        } catch (error) {
+          store.update({ installing: false, installError: String(error?.message ?? error) })
+        }
+      }, 1200)
     }
 
     async function saveConfig(t) {
@@ -299,6 +370,135 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function needKey(need) {
+      if (need === 'required') return 'needRequired'
+      if (need === 'recommended') return 'needRecommended'
+      return 'needOptional'
+    }
+
+    /** One line of the dependency checklist. */
+    function dependencyRow(t, entry) {
+      return h(
+        'div',
+        {
+          key: entry.id,
+          style: {
+            display: 'flex',
+            gap: '8px',
+            fontSize: '13px',
+            flexWrap: 'wrap',
+            alignItems: 'baseline',
+          },
+        },
+        h('span', { style: { minWidth: '150px' } }, entry.label ?? entry.id),
+        h(
+          'span',
+          { style: { color: entry.present ? '#7ec699' : '#e06c75', minWidth: '56px' } },
+          entry.present ? t('installed') : t('missing'),
+        ),
+        h('span', { style: { opacity: '0.6', minWidth: '52px' } }, entry.kind === 'package' ? t('kindPackage') : t('kindBinary')),
+        h('span', { style: { opacity: '0.6', minWidth: '64px' } }, t(needKey(entry.need))),
+        h('span', { style: { opacity: '0.55', minWidth: '170px' } }, (entry.packages ?? []).join(', ')),
+        h('span', { style: { opacity: '0.45', minWidth: '110px' } }, entry.version ?? ''),
+        h('span', { style: { opacity: '0.65', flex: '1 1 220px' } }, entry.purpose ?? ''),
+        entry.detail
+          ? h('span', { style: { color: '#e5c07b', flex: '1 1 100%', fontSize: '12px' } }, entry.detail)
+          : null,
+      )
+    }
+
+    /**
+     * The "install the missing dependencies" block.
+     *
+     * The button only appears when the report really lists missing packages,
+     * and a second click confirms — an accidental click must never install
+     * anything.
+     */
+    function installBlock(t, report) {
+      const install = report?.install ?? {}
+      const packages = install.packages ?? []
+      const job = store.installJob
+      const children = [
+        h('div', { style: { fontWeight: '600' } }, t('installTitle')),
+      ]
+
+      if (packages.length === 0) {
+        children.push(h('div', { style: { fontSize: '13px', opacity: '0.7' } }, t('installNothing')))
+      } else {
+        children.push(
+          h('div', { style: { fontSize: '13px' } }, `${t('installPackages')}: ${packages.join(', ')}`),
+          h(
+            'div',
+            { style: { fontSize: '12px', opacity: '0.65' } },
+            `${t('installCommand')}: ${install.command ?? ''}`,
+          ),
+          h(
+            'div',
+            { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
+            store.installConfirming
+              ? button(t('installConfirm'), () => runInstall(t), { disabled: store.installing })
+              : null,
+            store.installConfirming
+              ? button(t('installCancel'), () => store.update({ installConfirming: false }))
+              : null,
+            !store.installConfirming
+              ? button(
+                  `${t('installButton')}（${packages.length}）`,
+                  () => store.update({ installConfirming: true }),
+                  { disabled: store.installing },
+                )
+              : null,
+          ),
+        )
+      }
+
+      if (store.installing) {
+        children.push(h('div', { style: { fontSize: '13px', opacity: '0.8' } }, t('installRunning')))
+      }
+      if (store.installError) {
+        children.push(h('div', { style: { color: '#e06c75', fontSize: '13px' } }, `${t('installDenied')}: ${store.installError}`))
+      }
+      if (job && job.status && job.status !== 'running') {
+        children.push(
+          h(
+            'div',
+            { style: { color: job.status === 'done' ? '#7ec699' : '#e06c75', fontSize: '13px' } },
+            job.status === 'done' ? t('installDone') : t('installFailed'),
+          ),
+          job.method
+            ? h('div', { style: { fontSize: '12px', opacity: '0.65' } }, `${t('installPrivilege')}: ${job.method}`)
+            : null,
+          job.error
+            ? h('div', { style: { color: '#e06c75', fontSize: '12px', whiteSpace: 'pre-wrap' } }, job.error)
+            : null,
+          job.output
+            ? h(
+                'pre',
+                {
+                  style: {
+                    margin: '4px 0 0',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(128,128,128,0.12)',
+                    fontSize: '12px',
+                    whiteSpace: 'pre-wrap',
+                    maxHeight: '220px',
+                    overflow: 'auto',
+                  },
+                },
+                job.output,
+              )
+            : null,
+        )
+      }
+
+      return h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+        children,
+      )
+    }
+
     function CheckButton(props) {
       const { subject, t } = props
       useStore()
@@ -314,7 +514,6 @@ window.__ModuleLoader__.load({
         return h('div', { style: { color: '#e06c75' } }, `${t('failedCheck')}: ${store.checkError}`)
       }
       if (!report) return null
-      const binaries = report.binaries ?? []
       const x11 = report.x11 ?? {}
       const issues = report.issues ?? []
       return h(
@@ -340,28 +539,16 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
-          h('div', { style: { fontWeight: '600' } }, t('binaryTitle')),
-          binaries.map(entry =>
-            h(
-              'div',
-              { key: entry.name, style: { display: 'flex', gap: '8px', fontSize: '13px' } },
-              h('span', { style: { minWidth: '90px' } }, entry.name),
-              h(
-                'span',
-                {
-                  style: {
-                    color: entry.present ? '#7ec699' : '#e06c75',
-                    minWidth: '70px',
-                  },
-                },
-                entry.present ? t('present') : t('missing'),
-              ),
-              h('span', { style: { opacity: '0.65' } }, entry.required ? t('required') : t('optional')),
-              h('span', { style: { opacity: '0.65' } }, entry.purpose ?? ''),
-              h('span', { style: { opacity: '0.45' } }, entry.version ?? ''),
-            ),
+          h('div', { style: { fontWeight: '600' } }, t('depTitle')),
+          h(
+            'div',
+            { style: { fontSize: '12px', opacity: '0.6' } },
+            `${t('installed')} ${report.summary?.dependenciesPresent ?? 0}/${report.summary?.dependenciesTotal ?? 0}`
+            + ` · ${t('missing')} ${report.summary?.dependenciesMissing ?? 0}`,
           ),
+          (report.dependencies ?? []).map(entry => dependencyRow(t, entry)),
         ),
+        installBlock(t, report),
         h(
           'div',
           { style: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' } },

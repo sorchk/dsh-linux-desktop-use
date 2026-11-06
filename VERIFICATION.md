@@ -198,3 +198,42 @@
 * 节点文本默认截断到 400 字符、子节点上限 200，避免整屏文本一次性进入模型上下文。
 * `python3 -c <script>` 启动的应用在总线上的应用名是 `-c` 而不是 `python3`，
   按应用名过滤时要用真实应用名（写成脚本文件时即为脚本文件名）。
+
+## 11. 依赖全量检查与一键安装验证（v1.8.0）
+
+### 11.1 自动化测试
+
+| 测试文件 | 覆盖内容 | 结果 |
+| --- | --- | --- |
+| `test/dependencies.test.js` | 目录覆盖 README 运行依赖表的每一项、id 唯一、`allPackages()` 去重排序、安装计划只含缺失项且只含目录内包名、未知 id 被忽略、同包去重、缺失统计分级 | 10 项全通过 |
+| `test/installer.test.js` | `probePackage` 对已装/未装包的判定、`probePackages` 批量顺序、`detectPrivilege` 返回值域、无提权能力时**拒绝安装并给出手动命令**、空包列表不动手、`tailOutput` 尾部截取、审计日志路径 | 8 项全通过 |
+| `test/http-install.test.js` | `/install` 路由已注册、GET 返回任务状态、POST 拒绝跨站 Origin / `sec-fetch-site: cross-site` / 缺 Origin、POST 不接受目录外的 id | 6 项全通过 |
+
+全量测试：`npm test` → **120 个用例全部通过**（此前 96 个）。
+
+### 11.2 实机观测
+
+用「临时 PATH」把 `scrot` / `wmctrl` 伪装成缺失，走真实 HTTP 路由（假 webServer + 真诊断逻辑）：
+
+| 观测项 | 实测值 |
+| --- | --- |
+| 体检结果 | `dependenciesPresent=10 / dependenciesTotal=12 / dependenciesMissing=2`；缺失项 `scrot(binary/recommended)`、`wmctrl(binary/recommended)` |
+| 缺失项分级 | 两个缺失项都记为 **warning**（级别为「建议」），不再一律 error |
+| 安装计划 | `{"needed":true,"packages":["scrot","wmctrl"],"dependencies":["scrot","wmctrl"],"command":"sudo apt-get install -y scrot wmctrl"}` |
+| POST /install | **202**，立即返回 job（`status=running`），HTTP 请求不被 apt-get 阻塞 |
+| 任务结果 | 本机**没有免密 sudo**（容器内 `no-new-privileges`），任务以 `status=failed` 结束，`method=无法提权`，输出 `请在终端手动执行：sudo apt-get install -y scrot wmctrl` |
+| 跨站请求 | 跨站 Origin、缺 Origin、`sec-fetch-site: cross-site` 三种情况全部 **403 cross-origin request refused** |
+| 审计日志 | `~/.local/state/dsh/linux-desktop-use-install.log` 写入两行：`start job=install-mw58w3hc packages=scrot,wmctrl` 与 `finish job=install-mw58w3hc status=failed method=无法提权 packages=scrot,wmctrl` |
+| 全量依赖在本机的真实状态 | 12 条依赖全部就绪（xdotool 3.20160805.1 / scrot 1.10 / ffmpeg 6.1.1 / wmctrl 1.07 / xrandr 1.5.2 / xprop / xdpyinfo / python3 + python3-gi / gir1.2-atspi-2.0 / at-spi2-core / libatk-adaptor），因此正常情况下页面**不出现**安装按钮 |
+
+> 本机没有免密提权能力，所以「真正执行 apt-get 安装」这一步无法在此环境验证；
+> 安装器在 `root` / 免密 `sudo -n` / `pkexec` 三条路径上的分支逻辑由单元测试覆盖，
+> 真实安装请在具备免密 sudo 的机器上复验。
+
+### 11.3 已知限制
+
+* **没有免密 sudo 的环境装不了**：插件不索取密码，宁可失败并给出手动命令，也不在后台弹交互式密码框。
+* **`pkexec` 分支需要图形授权代理**：无 polkit 授权代理的环境里会直接失败，错误里带原始输出。
+* **安装只支持 apt 系**：Debian/Ubuntu 的包名与 `dpkg` 状态；其他发行版上「缺失」判定与安装命令都不适用，
+  需自行按依赖目录里的用途说明手工安装。
+* **包索引过期时**会先自动跑一次 `apt-get update` 再重试（仅一次）。

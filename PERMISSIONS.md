@@ -75,8 +75,32 @@
 | 路由 | 会不会改东西 |
 | --- | --- |
 | `GET /dsh-linux-desktop-use/check` | 只读体检：不写任何文件，不触碰桌面 |
+| `GET /dsh-linux-desktop-use/install` | 只读：读取当前安装任务的状态与输出 |
+| `POST /dsh-linux-desktop-use/install` | **会以 root 权限安装系统软件包**（仅限依赖目录登记的包）；路由要求带匹配主机名的 `Origin`，跨站或缺 Origin 一律 403 |
 | `GET /dsh-linux-desktop-use/config` | 只读：读取配置文件与生效值 |
 | `POST /dsh-linux-desktop-use/config` | **会写** `~/.config/dsh/linux-computer-use.json`（仅接受白名单内的键）；路由带同源校验，跨源请求 403 |
+
+## 4.2 一键安装依赖的提权路径与审计
+
+详情页的「一键安装缺失依赖」按钮会真的调用 `apt-get install -y`，这是本插件唯一会写到
+**系统目录**的操作，因此提权路径被严格限定：
+
+| 顺序 | 方式 | 条件 | 行为 |
+| --- | --- | --- | --- |
+| 1 | 已是 root | 宿主进程 uid = 0 | 直接 `apt-get install -y` |
+| 2 | 免密 sudo | `sudo -n -v` 成功 | `sudo -n apt-get install -y` |
+| 3 | pkexec | 存在 `pkexec` | `pkexec apt-get install -y`（弹 polkit 授权框） |
+| 4 | 都没有 | — | **拒绝安装**，任务标记失败并给出手动命令 |
+
+约束：
+
+* **绝不索取、绝不代填密码**：探测只用 `sudo -n`（非交互），失败即放弃。
+* **只装目录登记的包**：包名由 `lib/dependencies.js` 查表决定，浏览器只能提交目录 id。
+* **同源要求**：POST 必须带匹配主机名的 `Origin`，`sec-fetch-site: cross-site` 一律拒绝。
+* **二次确认**：页面上的安装按钮先要点「确认安装」才会发起请求。
+* **审计留痕**：每次尝试追加到 `~/.local/state/dsh/linux-desktop-use-install.log`
+  （时间戳 + 任务 id + 包列表 + 结果 + 提权方式）。
+* **安装后复检**：任务结束后自动重新体检，依赖清单状态同步刷新。
 
 ## 5. 审批模式取值
 

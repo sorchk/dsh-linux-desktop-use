@@ -1,5 +1,36 @@
 # 更新日志
 
+### v1.8.0  2026-11-07
+
+依赖检查覆盖 README「运行依赖」表的**全部**依赖，并在缺依赖时提供一键安装按钮。
+
+1. 新增依赖目录 `lib/dependencies.js`：把 8 个辅助程序（xdotool / scrot / ffmpeg / wmctrl /
+   xrandr / xprop / xdpyinfo / python3）与 4 个系统包（python3-gi / gir1.2-atspi-2.0 /
+   at-spi2-core / libatk-adaptor）连同**级别**（必需 / 建议 / 可选）、**用途**与
+   **提供者软件包名**登记成一份目录，成为「检查」「安装」「文档」的唯一事实来源。
+2. 依赖体检改为逐条判定目录里的每一项：程序看 PATH，系统包看 dpkg 数据库
+   （`dpkg-query -W -f '${Status}\t${Version}'`，缺失时回退 `dpkg -s`）；
+   `python3-gi` / `gir1.2-atspi-2.0` 额外验证 gi/Atspi 绑定能否导入，
+   装了包但绑定不可用时仍判为缺失并给出说明。缺失项按级别上报为 error / warning / info
+   （此前只有 error / info 两档）。
+3. 新增 `lib/installer.js`：探测 dpkg 包状态 → 决定提权路径（已是 root → 免密 `sudo -n` →
+   `pkexec`）→ 执行 `apt-get install -y`；遇到 `Unable to locate package` 会先刷新一次包索引再重试。
+   **绝不索取或代填密码**：没有非交互提权能力时直接失败，并给出可手动执行的命令。
+4. 新增 `POST/GET /dsh-linux-desktop-use/install` 路由与详情页 **「一键安装缺失依赖」** 按钮：
+   安装在后台执行、页面轮询进度并显示输出尾部，结束后自动重新体检。
+   安全边界：浏览器只能提交目录 **id**、不能提交任意包名；POST 必须带匹配主机名的 `Origin`，
+   跨站或缺 Origin 一律 403；每次尝试写入 `~/.local/state/dsh/linux-desktop-use-install.log` 审计日志。
+5. 详情页依赖清单重做：从「只列辅助程序」改为**完整依赖清单**（类型 / 级别 / 状态 / 提供者软件包 /
+   版本 / 用途），并显示「已装 x/y · 缺失 z」汇总；安装需二次确认才真正执行。
+6. `linux_check_env` 工具的输出 schema 新增 `dependencies` 与 `install` 段，
+   `summary` 新增 `dependenciesPresent` / `dependenciesTotal` / `dependenciesMissing`，
+   渲染文本里给出缺失依赖与等价安装命令。
+7. 新增测试 `test/dependencies.test.js`、`test/installer.test.js`、`test/http-install.test.js`
+   （目录完整性、安装计划只含缺失项与目录内包名、未知 id 被忽略、无提权能力时拒绝安装并给出手动命令、
+   安装路由的跨站 / 缺 Origin / 任意包名拒绝），测试总数从 96 个增加到 120 个。
+8. 文档同步：README 新增「检查与一键安装」小节与安装安全边界表；PERMISSIONS.md 补提权路径与审计日志；
+   VERIFICATION.md 补第 11 节实机验证记录；package.json 版本升到 1.8.0 并补充权限声明。
+
 ### v1.7.0  2026-11-06
 
 新增 AT-SPI 无障碍树能力，工具总数从 17 个增加到 19 个。

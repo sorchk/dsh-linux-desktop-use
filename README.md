@@ -87,9 +87,11 @@ sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
 
 插件自带客户端半，在 DSH「插件 → Linux 电脑控制」详情页提供：
 
-* 顶部 **「检查依赖」** 按钮：一键体检，列出每个辅助程序是否安装/版本、X11 会话的
-  XTEST（输入注入）与 EWMH（窗口管理）能力、DISPLAY 套接字、Xauthority 凭据、配置文件状态，
+* 顶部 **「检查依赖」** 按钮：一键体检，列出依赖清单里**每一条**依赖（辅助程序 + 系统包）是否安装/版本、
+  X11 会话的 XTEST（输入注入）与 EWMH（窗口管理）能力、DISPLAY 套接字、Xauthority 凭据、配置文件状态，
   以及所有需要处理的问题（含修复提示）。
+* 体检结果下方按需出现 **「一键安装缺失依赖」** 按钮：只列出并安装真正缺失的软件包，
+  需二次确认后才执行；没有免密提权能力时不会尝试任何密码，而是给出可手动执行的命令。
 * 页面下方 **「桌面控制依赖与配置」** 面板：可直接编辑 DISPLAY、XAUTHORITY、审批策略、
   观察快照有效期、允许的窗口标题、命令超时，并保存到配置文件。
 * 同样的体检结果，模型侧通过 `linux_check_env` 工具读取——**同一份实现，两个入口**。
@@ -99,6 +101,7 @@ sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
 | 路由 | 方法 | 用途 |
 | --- | --- | --- |
 | `/dsh-linux-desktop-use/check` | GET | 依赖体检报告（只读） |
+| `/dsh-linux-desktop-use/install` | GET / POST | 轮询安装任务 / 启动缺失依赖安装（POST 需同源 Origin） |
 | `/dsh-linux-desktop-use/config` | GET / POST | 读取 / 保存配置 |
 
 > 改完代码需要让宿主重新加载模块：重装一次 bundle 会触发 `hmr.reconcileProfile`
@@ -154,6 +157,7 @@ sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
 | `ffmpeg` | 截图回退实现、截图缩放 + 画面指纹计算（`linux_verify_state`） | 建议 |
 | `python3` + `python3-gi` + `gir1.2-atspi-2.0` | 无障碍树采集脚本（`linux_app_state` / `linux_set_value`） | 可选 |
 | `at-spi2-core` + `libatk-adaptor` | 无障碍总线与 ATK 桥接（让 GUI 应用暴露无障碍树） | 可选 |
+| `xdpyinfo` | XTEST 扩展能力探测（缺失时回退用 xdotool 探测） | 可选 |
 
 安装：
 
@@ -162,6 +166,33 @@ sudo apt-get install -y xdotool scrot wmctrl ffmpeg
 # 可选：启用无障碍树能力
 sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
 ```
+
+### 检查与一键安装（v1.8.0 起）
+
+上表每一项都登记在依赖目录 `lib/dependencies.js` 里，目录是**唯一事实来源**：
+
+* 详情页的「检查依赖」按钮与 `linux_check_env` 工具读同一份报告，逐条给出
+  **类型（程序 / 系统包）、级别（必需 / 建议 / 可选）、用途、状态、提供者软件包**，
+  缺失项按级别上报为 error / warning / info。
+* 报告里的 `install` 段给出待安装软件包与等价命令：
+
+  ```bash
+  sudo apt-get install -y scrot wmctrl
+  ```
+
+* 详情页随后出现 **「一键安装缺失依赖」** 按钮 → 二次确认 → 后台执行 `apt-get install -y`，
+  页面轮询进度并显示安装输出尾部。
+
+安装环节的安全边界：
+
+| 边界 | 行为 |
+| --- | --- |
+| 只装目录登记的包 | 浏览器只能提交目录 **id**，不能提交任意包名；包名由目录查表决定 |
+| 同源要求 | `POST /install` 必须带匹配主机名的 `Origin`，跨站或缺 Origin 一律 403 |
+| 不索取密码 | 提权只用「已是 root → 免密 `sudo -n` → `pkexec`」三条路径；都没有时任务直接失败并给出手动命令 |
+| 后台 + 轮询 | apt-get 可能耗时数分钟，安装在后台跑，HTTP 请求不阻塞 |
+| 审计留痕 | 每次尝试追加到 `~/.local/state/dsh/linux-desktop-use-install.log` |
+| 安装后复检 | 任务结束后自动重新体检，状态同步回依赖清单 |
 
 ## 权限与运行环境
 
