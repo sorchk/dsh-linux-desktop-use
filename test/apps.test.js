@@ -1,13 +1,24 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import {
   collectDesktopEntryDirs,
   buildAppIndex,
   findApp,
   matchAppToClass,
+  scoreAppToClass,
   groupWindowsByClass,
   parseWMClass,
   buildLaunchPlan,
+  buildTerminalArgv,
+  parseEnvironText,
+  extractSessionBusAddress,
+  matchRunningGroups,
+  findTerminalEmulator,
+  findSessionBusAddress,
+  buildApplicationCatalog,
 } from '../lib/apps.js'
 
 const entries = [
@@ -151,7 +162,122 @@ test('启动计划：Terminal=true 时用终端模拟器包裹', () => {
   assert.match(plan.argv.join(' '), /htop/)
 })
 
+test('终端参数按模拟器差异生成：xfce4-terminal 用 --command=，xterm 用 -e', () => {
+  assert.deepEqual(buildTerminalArgv('xfce4-terminal', ['htop']), ['--command=htop'])
+  assert.deepEqual(buildTerminalArgv('/usr/bin/xfce4-terminal', ['htop']), ['--command=htop'])
+  assert.deepEqual(buildTerminalArgv('xterm', ['htop']), ['-e', 'htop'])
+  assert.deepEqual(buildTerminalArgv('gnome-terminal', ['htop']), ['--', 'htop'])
+  assert.deepEqual(buildTerminalArgv('konsole', ['htop']), ['-e', 'htop'])
+  // 参数里带空格时要加引号，避免被终端再拆一次。
+  assert.deepEqual(buildTerminalArgv('xfce4-terminal', ['python3', '-c', 'print(1 2)']), [
+    '--command=python3 -c "print(1 2)"',
+  ])
+})
+
 test('启动计划：缺少 Exec 时返回错误信息', () => {
   const plan = buildLaunchPlan({ ...entries[0], exec: '' })
   assert.equal(plan.error, '桌面条目没有 Exec 字段，无法启动')
+})
+
+test('进程环境文本按 NUL 分隔解析', () => {
+  const parsed = parseEnvironText('DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\0DISPLAY=:1\0\0BROKEN')
+  assert.equal(parsed.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus')
+  assert.equal(parsed.DISPLAY, ':1')
+  assert.equal(parsed.BROKEN, undefined)
+})
+
+test('从环境里提取 D-Bus 会话地址', () => {
+  assert.equal(extractSessionBusAddress({ DBUS_SESSION_BUS_ADDRESS: 'unix:path=/tmp/dbus-abc' }), 'unix:path=/tmp/dbus-abc')
+  assert.equal(extractSessionBusAddress({ DBUS_SESSION_BUS_ADDRESS: '  ' }), '')
+  assert.equal(extractSessionBusAddress({}), '')
+})
+
+test('窗口分组兼容字符串形式的 WM_CLASS', () => {
+  const groups = groupWindowsByClass([
+    { id: '0x1', title: 'A', wmClass: 'code.code' },
+    { id: '0x2', title: 'B', wmClass: 'chromium.Chromium' },
+  ])
+  assert.equal(groups.length, 2)
+  const code = groups.find(g => g.class === 'code')
+  assert.equal(code.instance, 'code')
+  assert.equal(code.windows.length, 1)
+})
+
+test('匹配打分：优先主条目而不是同可执行名的辅助条目', () => {
+  const scored = scoreAppToClass({ ...entries[0], id: 'thunar', exec: 'thunar %U' }, 'Thunar', 'Thunar')
+  const bulk = scoreAppToClass({ ...entries[0], id: 'thunar-bulk-rename', exec: 'thunar --bulk-rename %F' }, 'Thunar', 'Thunar')
+  assert.ok(scored > bulk, '主条目的得分必须高于同可执行名的辅助条目')
+  assert.equal(scoreAppToClass(null, 'x', 'x'), 0)
+  assert.equal(scoreAppToClass({ id: 'nope', exec: 'zzz' }, 'x', 'x'), 0)
+})
+
+test('运行中的窗口分组可关联到桌面条目并按关键字过滤', () => {
+  const groups = groupWindowsByClass([
+    { id: '0x1', title: 'A', wmClass: 'code.code' },
+    { id: '0x2', title: 'B', wmClass: 'chromium.Chromium' },
+    { id: '0x3', title: 'C', wmClass: 'Thunar.Thunar' },
+  ])
+  const all = matchRunningGroups(groups, entries)
+  assert.equal(all.length, 3)
+  const thunar = all.find(g => g.class === 'Thunar')
+  assert.equal(thunar.entryId, 'thunar')
+  assert.equal(thunar.windowCount, 1)
+  const filtered = matchRunningGroups(groups, entries, 'chromium')
+  assert.equal(filtered.length, 1)
+  assert.equal(filtered[0].class, 'Chromium')
+})
+
+test('终端模拟器按候选顺序查找', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-term-'))
+  const fake = path.join(dir, 'gnome-terminal')
+  fs.writeFileSync(fake, '#!/bin/sh\n')
+  fs.chmodSync(fake, 0o755)
+  assert.equal(findTerminalEmulator({ PATH: dir }), fake)
+  assert.equal(findTerminalEmulator({ PATH: '/nonexistent-dir' }), '')
+})
+
+test('应用目录把已安装条目与运行中的窗口关联起来', () => {
+  const groups = groupWindowsByClass([
+    { id: '0x1', title: 'A', wmClass: 'code.code' },
+    { id: '0x2', title: 'B', wmClass: 'code.code' },
+    { id: '0x3', title: 'C', wmClass: 'chromium.Chromium' },
+  ])
+  const catalog = buildApplicationCatalog({ entries, groups })
+  const vscode = catalog.applications.find(item => item.id === 'vscode')
+  assert.equal(vscode.running, true)
+  assert.equal(vscode.windowCount, 2)
+  assert.equal(vscode.wmClass, 'code')
+  const thunar = catalog.applications.find(item => item.id === 'thunar')
+  assert.equal(thunar.running, false)
+  assert.equal(thunar.windowCount, 0)
+  assert.equal(catalog.applications.length, 5)
+  assert.equal(catalog.running.length, 2)
+})
+
+test('应用目录支持关键字过滤并默认隐藏 NoDisplay 条目', () => {
+  const hiddenEntries = [...entries, { ...entries[0], id: 'secret', noDisplay: true }]
+  const filtered = buildApplicationCatalog({ entries: hiddenEntries, groups: [], query: 'thunar' })
+  assert.equal(filtered.applications.length, 1)
+  assert.equal(filtered.applications[0].id, 'thunar')
+
+  const withoutHidden = buildApplicationCatalog({ entries: hiddenEntries, groups: [] })
+  assert.equal(withoutHidden.applications.some(item => item.id === 'secret'), false)
+
+  const withHidden = buildApplicationCatalog({ entries: hiddenEntries, groups: [], includeHidden: true })
+  assert.equal(withHidden.applications.some(item => item.id === 'secret'), true)
+})
+
+test('D-Bus 会话地址优先取自环境，其次取自进程环境文件', () => {
+  assert.equal(
+    findSessionBusAddress({ env: { DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus' }, pids: [] }),
+    'unix:path=/run/user/1000/bus',
+  )
+
+  const procRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-proc-'))
+  const pidDir = path.join(procRoot, '4242')
+  fs.mkdirSync(pidDir)
+  fs.writeFileSync(path.join(pidDir, 'environ'), 'DISPLAY=:1\0DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/dbus-test\0')
+
+  assert.equal(findSessionBusAddress({ env: {}, pids: [4242], procRoot }), 'unix:path=/tmp/dbus-test')
+  assert.equal(findSessionBusAddress({ env: {}, pids: [], procRoot }), '')
 })
