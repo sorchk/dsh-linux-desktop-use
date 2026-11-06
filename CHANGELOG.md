@@ -1,5 +1,22 @@
 # 更新日志
 
+### v1.5.4  2026-11-06
+
+补充 MIT 许可证。
+
+1. 新增根目录 `LICENSE` 文件，采用标准 MIT 协议文本，版权归属 `Copyright (c) 2026 sorchk`。
+2. `package.json` 的 `files` 白名单加入 `LICENSE`，随 npm 包一起分发；
+   `license` 字段原本就是 `MIT`，本次补齐实际的协议文件。
+3. README 新增「许可证」一节，指向 `LICENSE` 并附版权声明。
+
+### v1.5.3  2026-11-06
+
+为插件市场收录补充资源。
+
+1. 新增 `assets/icon-180.png`（180×180 位图，由 `icon.svg` 导出）：插件市场（dshmarket / awesome-dsh-plugin）
+   的条目 `icon` 字段只接受 GitHub 托管的位图，SVG 会被 CI 拒绝，因此额外提供 PNG 版本。
+2. `package.json` 的 `files` 白名单加入 `assets/icon-180.png`，随 npm 包一起分发。
+
 ### v1.5.2  2026-11-06
 
 修复 `dry_run`（发布演练）模式下工作流必然失败的问题。

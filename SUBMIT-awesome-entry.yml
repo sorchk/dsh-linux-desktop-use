@@ -1,0 +1,11 @@
+# 提交到 awesome-dsh-plugin 的条目文件
+# 用法：把本文件内容复制到
+#   https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/sorchk__dsh-linux-desktop-use.yml
+# 然后对该仓库开 PR（只新增这一个文件）。文件名规则：owner__repo.yml
+url: https://github.com/sorchk/dsh-linux-desktop-use
+name: sorchk/dsh-linux-desktop-use
+category: tools
+description:
+  en: 'Control a local Linux desktop from DeepSeek Harness with 11 tools: screenshot, mouse, keyboard, scroll and window control over a native X11 session with XTEST, not Wayland.'
+  zh: '用 DeepSeek Harness 直接操控本机 Linux 桌面，提供 11 个工具：截图、鼠标、键盘、滚动与窗口控制，基于原生 X11 + XTEST 会话，不适用于 Wayland。'
+icon: https://raw.githubusercontent.com/sorchk/dsh-linux-desktop-use/main/assets/icon-180.png

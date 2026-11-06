@@ -210,3 +210,15 @@ cordis_inspect_query host Tool listTools   # 应看到 10 个 linux_* 工具
 > `Permission denied (publickey)`、`npm error code 128`。这是 v1.5.0 首次发布失败的原因。
 
 发布后即可通过 `plugin_manager install_bundle dsh-linux-desktop-use` 安装。
+
+## 许可证
+
+本项目采用 [MIT 许可证](./LICENSE)，版权所有者：sorc。
+
+```text
+MIT License
+
+Copyright (c) 2026 sorchk
+```
+
+完整协议文本见仓库根目录的 [`LICENSE`](./LICENSE) 文件（随 npm 包一同分发）。

@@ -1,6 +1,6 @@
 {
   "name": "dsh-linux-desktop-use",
-  "version": "1.5.2",
+  "version": "1.5.4",
   "type": "module",
   "description": "Control a local Linux graphical desktop from DeepSeek Harness: screenshot, mouse, keyboard, scroll and window tools. Requires a native X11 session with XTEST and the xdotool/scrot/ffmpeg/wmctrl binaries.",
   "exports": {
@@ -15,11 +15,13 @@
     "lib/",
     "locale/*.json",
     "icon.svg",
+    "assets/icon-180.png",
     "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md",
     "PERMISSIONS.md",
-    "VERIFICATION.md"
+    "VERIFICATION.md",
+    "LICENSE"
   ],
   "repository": {
     "type": "git",
