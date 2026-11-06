@@ -1,5 +1,26 @@
 # 更新日志
 
+### v1.6.1  2026-11-06
+
+补充 AI Agent 操作电脑的风险提示，明确建议在沙盒 / 隔离环境中使用本插件。
+
+1. README 顶部新增醒目警告块：AI Agent 拥有**真实**鼠标与键盘控制权，一次误判就可能误删文件、
+   覆盖未保存文档、误触破坏性命令、泄露凭据或误发消息 / 误支付，且多数不可撤销。
+2. README 新增「⚠️ 使用风险与沙盒建议」一节：用表格列出六类典型风险与后果
+   （误删 / 误覆盖、破坏性命令、凭据泄露、误发消息 / 误支付、坐标与窗口误判、失控循环），
+   并给出六条收敛建议（独立虚机 / 容器 / 独立 X 会话、沙盒不放真实数据、保持 `approvalMode=all`、
+   用 `allowedWindows` 缩小作用域、缩短 `ttlMs`、真实日常桌面不接 Agent）。
+3. PERMISSIONS.md 新增第 0 节「风险提示（务必先读）」，说明内置四道安全机制只能降低概率、
+   不能消除后果；第 5 节 `approvalMode=off` 的说明收紧为「仅限隔离沙盒环境」。
+4. VERIFICATION.md 顶部补充说明：验证环境本身即隔离的 X 会话（KasmVNC → `Xvnc :1`），
+   并指向沙盒建议。
+5. `lib/tools.js` 新增常量 `WRITE_SAFETY_NOTE`，为 9 个写操作工具（`linux_click`、`linux_drag`、
+   `linux_type`、`linux_key`、`linux_scroll`、`linux_activate_window`、`linux_launch_app`、
+   `linux_activate_app`、`linux_set_window_frame`）的描述统一追加 CAUTION 提示，
+   让模型在调用前就意识到「真实变更、不可逆、应运行在沙盒并保留逐次审批」。
+6. `package.json` 的 `description` 与 `dsh.permissions.summary`、`locale/zh.json` 与 `locale/en.json`
+   的插件描述均补充风险与沙盒说明；版本号升到 `1.6.1`。
+
 ### v1.6.0  2026-11-06
 
 新增应用、显示器与窗口几何控制能力，工具总数从 11 个增加到 17 个。

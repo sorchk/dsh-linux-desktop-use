@@ -3,6 +3,10 @@
 本文件记录 `dsh-linux-desktop-use`（原名 `@local/dsh-linux-desktop-use`）在**本机实机环境**上的验证步骤与实测结果。
 验证脚本：`scripts/smoke-test.mjs`（用假 `ctx` 驱动**真实**工具实现，直连真实 X 会话）。
 
+> 验证环境本身就是**隔离的 X 会话**（KasmVNC → `Xvnc :1`），未涉及生产环境或真实账号数据。
+> 这也是本插件的推荐使用方式：AI Agent 只在沙盒 / 隔离桌面中接管真实输入事件，
+> 详见 [`PERMISSIONS.md` 第 0 节](./PERMISSIONS.md) 与 README 的「使用风险与沙盒建议」。
+
 ## 0. 验证环境
 
 | 项 | 实测值 |

@@ -1,8 +1,8 @@
 {
   "name": "dsh-linux-desktop-use",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "type": "module",
-  "description": "Control a local Linux graphical desktop from DeepSeek Harness: screenshot, mouse, keyboard, scroll, window, application and display tools. Requires a native X11 session with XTEST and the xdotool/scrot/ffmpeg/wmctrl binaries.",
+  "description": "Control a local Linux graphical desktop from DeepSeek Harness: screenshot, mouse, keyboard, scroll, window, application and display tools. Requires a native X11 session with XTEST and the xdotool/scrot/ffmpeg/wmctrl binaries. WARNING: an AI agent operating a computer can cause irreversible damage (deleting files, overwriting documents, leaking credentials, unintended payments); run it inside a sandbox or isolated desktop, never on a machine holding real accounts and production data.",
   "scripts": {
     "test": "node --test \"test/*.test.js\""
   },
@@ -54,7 +54,7 @@
       ]
     },
     "permissions": {
-      "summary": "控制本机 Linux 图形桌面（原生 X11 + XTEST 会话，XFCE/GNOME/KDE 等任意 X11 桌面；Wayland 原生会话不适用）：截图、鼠标、键盘、滚动、窗口列举与激活、应用枚举/启动/聚焦、显示器枚举、窗口移动缩放、界面状态断言。截图经 ctx.attachments.saveImage 交给模型，输入经 xdotool XTEST 注入同一 X 会话。全部为同用户本地调用，不访问网络。",
+      "summary": "控制本机 Linux 图形桌面（原生 X11 + XTEST 会话，XFCE/GNOME/KDE 等任意 X11 桌面；Wayland 原生会话不适用）：截图、鼠标、键盘、滚动、窗口列举与激活、应用枚举/启动/聚焦、显示器枚举、窗口移动缩放、界面状态断言。截图经 ctx.attachments.saveImage 交给模型，输入经 xdotool XTEST 注入同一 X 会话。全部为同用户本地调用，不访问网络。风险：AI Agent 拥有真实鼠标键盘控制权，误判可造成不可逆破坏（误删文件、覆盖文档、泄露凭据、误发消息或误支付），建议只在沙盒 / 隔离桌面中使用，并保持 approvalMode=all 逐次审批。",
       "commands": [
         "xdotool getdisplaygeometry",
         "xdotool getmouselocation",
