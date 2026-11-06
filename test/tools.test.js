@@ -68,3 +68,30 @@ test('新工具的输出 schema 至少包含关键字段', () => {
   assert.ok(byName.get('linux_set_window_frame').output.schema.properties.window_id)
   assert.ok(byName.get('linux_verify_state').output.schema.properties.checks)
 })
+
+test('注册了 2 个 P2 无障碍工具', () => {
+  for (const name of ['linux_app_state', 'linux_set_value']) {
+    assert.ok(names.includes(name), `缺少工具 ${name}`)
+  }
+})
+
+test('linux_set_value 进入写操作集合，linux_app_state 保持只读', () => {
+  assert.ok(WRITE_TOOLS.has('linux_set_value'))
+  assert.equal(WRITE_TOOLS.has('linux_app_state'), false)
+})
+
+test('P2 工具的输出 schema 至少包含关键字段', () => {
+  const byName = new Map(tools.map(tool => [tool.name, tool]))
+  assert.ok(byName.get('linux_app_state').output.schema.properties.apps)
+  assert.ok(byName.get('linux_app_state').output.schema.properties.nodes)
+  assert.ok(byName.get('linux_set_value').output.schema.properties.changed)
+  assert.ok(byName.get('linux_set_value').output.schema.properties.before)
+  assert.ok(byName.get('linux_set_value').output.schema.properties.after)
+})
+
+test('linux_set_value 把 value 声明为必填参数', () => {
+  const byName = new Map(tools.map(tool => [tool.name, tool]))
+  const params = byName.get('linux_set_value').parameters
+  assert.ok(params.required.includes('value'))
+  assert.equal(params.properties.value.type, 'string')
+})
