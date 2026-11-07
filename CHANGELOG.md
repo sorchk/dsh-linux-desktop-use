@@ -1,5 +1,20 @@
 # 更新日志
 
+### v1.9.0  2026-11-07
+
+新增插件市场截图：仓库内声明 `screenshots.json`，插件市场详情页按 App Store 方式展示。
+
+1. 新增 `screenshots.json`（仓库根），列出 4 张截图的相对路径，供插件市场详情页展示；
+   路径相对 `screenshots.json` 本身，改名时本地即可发现断链。
+2. 新增 `assets/screenshots/`：能力总览、自动填表、窗口管理、依赖体检四张图。截图在独立的
+   Xvfb 会话（`:9`）中用本插件自身的 `lib/x11.js` 实际跑出来——填表一图由真实的
+   `linux_move_mouse` / `linux_click` / `linux_type` 完成，窗口一图由 `linux_set_window_frame`
+   铺开，体检一图是 `linux_check_env` 的真实输出。
+3. README 顶部新增「截图」一节并直接引用这四张图；`package.json` 的 `files` 加入
+   `assets/screenshots/` 与 `screenshots.json`，npm 包内同样可取。
+4. 修正 README 中「应看到 17 个 linux_* 工具」——自 v1.7.0 起已注册 19 个（新增
+   `linux_app_state` 与 `linux_set_value`）。
+
 ### v1.8.1  2026-11-07
 
 精简插件详情页的文档区：新增独立的精简详情文档，详情页不再渲染整篇 README，配置项无需滚动即可看到。

@@ -19,6 +19,17 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 
 插件把一组桌面工具注册进 `ctx.tools`，模型即可自行截图、点击、输入、滚动、切换窗口：
 
+## 截图
+
+| | |
+| --- | --- |
+| ![能力总览](./assets/screenshots/01-overview.png) | ![自动填表](./assets/screenshots/02-form-filling.png) |
+| ![窗口管理](./assets/screenshots/03-window-management.png) | ![依赖体检](./assets/screenshots/04-environment-check.png) |
+
+> 截图在独立的 Xvfb 会话（`:9`）中用本插件自身的代码实际跑出来的：填表一图是真的用
+> `linux_move_mouse` / `linux_click` / `linux_type` 完成的，窗口一图是真的用
+> `linux_set_window_frame` 铺开的，体检一图是 `linux_check_env` 的真实输出。
+
 ## 工具一览
 
 | 工具 | 作用 | 类型 |
@@ -288,7 +299,7 @@ node /home/sorc/workspaces/dsh-xfce-use/scripts/smoke-test.mjs
 npm test
 
 # 确认宿主已注册工具
-cordis_inspect_query host Tool listTools   # 应看到 17 个 linux_* 工具
+cordis_inspect_query host Tool listTools   # 应看到 19 个 linux_* 工具
 ```
 
 > 本包以链接方式安装时，**改完代码需要让宿主重新加载模块**（重装一次 bundle 触发
