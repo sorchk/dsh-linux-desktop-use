@@ -1,6 +1,6 @@
 {
   "name": "dsh-linux-desktop-use",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "type": "module",
   "description": "Control a local Linux graphical desktop from DeepSeek Harness: screenshot, mouse, keyboard, scroll, window, application, display and accessibility-tree (AT-SPI) tools. Requires a native X11 session with XTEST and the xdotool/scrot/ffmpeg/wmctrl binaries; the accessibility-tree tools additionally need at-spi2-core, libatk-adaptor and python3-gi. WARNING: an AI agent operating a computer can cause irreversible damage (deleting files, overwriting documents, leaking credentials, unintended payments); run it inside a sandbox or isolated desktop, never on a machine holding real accounts and production data.",
   "scripts": {
@@ -18,6 +18,8 @@
     "lib/",
     "test/",
     "locale/*.json",
+    "docs/detail.md",
+    "docs/detail.en.md",
     "icon.svg",
     "assets/icon-180.png",
     "cordis.patch.yml",

@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "Linux 电脑控制",
+    "detail": "docs/detail.md",
     "description": "操控本机 Linux 图形桌面：截图、点击/拖拽/滚动、键盘输入与组合键、窗口列举与激活、应用枚举/启动/聚焦、显示器枚举、窗口移动缩放、界面状态断言，以及可选的 AT-SPI 无障碍树读取与控件赋值。适用于原生 X11 + XTEST 会话（XFCE/GNOME/KDE 等任意 X11 桌面；Wayland 原生会话不适用）。依赖 xdotool、scrot、ffmpeg、wmctrl，需与桌面同用户的 DISPLAY 与 XAUTHORITY；无障碍树另需 at-spi2-core、libatk-adaptor 与 python3-gi。写操作须先截图观察并通过分级审批。⚠️ 风险：AI Agent 拥有真实鼠标键盘控制权，误判可致误删文件、覆盖文档、泄露凭据、误发消息或误支付，建议只在沙盒 / 隔离桌面中使用。"
   }
 }
