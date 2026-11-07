@@ -43,7 +43,7 @@
 
 | 检查 | 方法 | 结果 |
 | --- | --- | --- |
-| 工具注册 | `cordis_inspect_query(host, Tool, listTools)` | v1.5.x 为 11 个 `linux_*` 工具；v1.6.0 起增加 `linux_apps`、`linux_launch_app`、`linux_activate_app`、`linux_displays`、`linux_set_window_frame`、`linux_verify_state`，共 17 个 |
+| 工具注册 | `cordis_inspect_query(host, Tool, listTools)` | v1.5.x 为 11 个 `linux_*` 工具；v1.6.0 起增加 `linux_apps`、`linux_launch_app`、`linux_activate_app`、`linux_displays`、`linux_set_window_frame`、`linux_verify_state`，共 17 个；v1.7.0 起增加 `linux_app_state`、`linux_set_value`，共 19 个；v1.10.0 起增加 5 个 `linux_browser_*`，共 24 个 |
 | 审批闸门（真实会话） | 子代理会话调用 `linux_scroll`（会走 `approve()`） | 返回 `Error: 桌面操作未获批准（审批结果：rejected）` → 闸门真实生效 |
 | 审批豁免对照 | 同会话调用 `linux_move_mouse` | 直接成功（该工具只读+不审批，符合设计） |
 | 服务依赖 | `cordis_inspect_query(host, Service, listService)` | `tools`、`attachments`、`approval`、`computerUse`、`hmr`、`webServer` 等在线 |
@@ -168,6 +168,7 @@
 | 桥接层纯逻辑 | `test/atspi.test.js` | 环境拼装、请求构造、响应解析、树裁剪、角色/名称筛选、可编辑节点挑选、坐标计算、错误映射共 20 项全通过（不需要 X 会话与 python3） |
 | 依赖体检 | `test/diagnostics.test.js` | `a11y` 段的 `available` 判定：三项齐备 → 可用；缺 `python3` / `gi` / 总线 socket → 不可用并说明原因 |
 | 工具契约 | `test/tools.test.js` | 19 个工具齐全；`linux_set_value` 在 `WRITE_TOOLS` 内、`linux_app_state` 不在；两个工具的参数与输出 schema 齐全 |
+| 浏览器工具契约 | `test/browser.test.js` | 24 个工具齐全；5 个 `linux_browser_*` 已注册，四个写工具在 `WRITE_TOOLS` 内、`linux_browser_state` 不在；启动计划**不含** `--remote-debugging-port`；每个工具的 description 都写明「不涉及 CDP」 |
 | 集成冒烟 | `test/integration.test.js` 的 AT-SPI 组 | 起一个 GTK3 测试应用，验证列树、按角色与名字过滤、直读文本、写入文本、参数校验共 6 项全通过 |
 
 ### 10.2 实机观测
@@ -237,3 +238,50 @@
 * **安装只支持 apt 系**：Debian/Ubuntu 的包名与 `dpkg` 状态；其他发行版上「缺失」判定与安装命令都不适用，
   需自行按依赖目录里的用途说明手工安装。
 * **包索引过期时**会先自动跑一次 `apt-get update` 再重试（仅一次）。
+
+
+## 12. 浏览器能力验证（v1.10.0，AT-SPI + XTEST，不使用 CDP）
+
+验证方式：在真实 X 会话（`:1`）里用真实 Chromium 实例，走**无障碍总线 + XTEST**，
+**全程不开启 CDP 端口**。
+
+### 12.1 自动化测试
+
+| 检查 | 方法 | 结果 |
+| --- | --- | --- |
+| 浏览器纯逻辑 | `test/browser.test.js` | 18 个用例全通过：常量、启动计划（**不含 `--remote-debugging-port`**）、标题/地址/正文提取、页面元素分组、`summarizePage`、`findAddressBar`、`pickPreferredAction`（链接优先 `jump`、不兜底 `showContextMenu`）、`collectTargets`、`resolveTarget` 歧义、`locateTarget` 的 page/window 作用域、`locateClickable`/`locateInput` 默认角色、`describeCandidates` |
+| 浏览器集成 | `test/integration.test.js` 的「浏览器工具」组 | 4 个子用例全通过：起实例并注册到总线、读出标题/地址/控件、换页并读回地址、向输入框键入并点按钮 |
+| 全量测试 | `npm test` | **144 个用例全部通过**（此前 120 个） |
+
+### 12.2 实机观测
+
+| 观测项 | 实测值 |
+| --- | --- |
+| 启动命令行 | `chromium --user-data-dir=<独立目录> --force-renderer-accessibility --no-first-run --no-default-browser-check --disable-session-crashed-bubble --disable-infobars --disable-gpu <url>`；**没有 `--remote-debugging-port`** |
+| 注册结果 | 实例出现在无障碍总线上，`ping` 返回 `{"name":"Chromium","pid":N}`；`linux_browser_launch` 返回 `registered: true` |
+| AX 树规模 | 带 `--force-renderer-accessibility` 的实例约 209 个节点；**不带该参数的实例只有 2 个节点**（只剩空壳窗口） |
+| 地址栏 | `entry` name=`Address and search bar`，actions=`["activate","showContextMenu"]`，**`editable=false`**（不暴露 EditableText，只能 XTEST 键入） |
+| 链接 | actions=`["jump","showContextMenu"]`——`jump` 即「跳转」，`linux_browser_click` 优先用它，页面确实跳转 |
+| `linux_browser_state` 输出 | `title` / `url` / `window_title` / `links` / `buttons` / `inputs` / `text` 齐全，正文能读到「PluginTest / hello world / Link A」 |
+| `linux_browser_navigate` 输出 | `{"pid":N,"url":"https://example.com","title":"Example Domain","final_url":"example.com"}` |
+| `linux_browser_click` 输出 | 链接：action=`jump`、method=`atspi-action`、box=`{"x":492,"y":874,"width":86,"height":25}`；按钮：action=`press`、method=`atspi-action` |
+| `linux_browser_type` 输出 | 中文「张三」键入成功（`typed: 2`），页面上的输出框真的变成「clicked:张三」——非 ASCII 走逐字符 remap |
+| `linux_check_env` 的 `browser` 段 | 列出总线上每个浏览器实例及其 `accessible` 标记（本机 2 个实例，均 `accessible: true`） |
+| 同一 profile 复用 | 第二次 `linux_browser_launch` 返回 `reused: true` 并复用原 pid（Chromium 同一 user-data-dir 只允许一个实例，第二次启动会转交后自行退出） |
+
+### 12.3 已知限制
+
+* **必须开屏幕阅读器开关**：Chromium 启动时读 `org.a11y.Status.ScreenReaderEnabled`，
+  该属性为 false 时即使带了 `--force-renderer-accessibility`，页面内容也不会进无障碍树。
+  本机用 `gsettings set org.gnome.desktop.a11y.applications screen-reader-enabled true` 打开。
+* **注册进程重启后浏览器会掉线**：`at-spi2-registryd` 重启后，已在运行的 Chromium 会从总线消失，
+  必须重启浏览器才能重新注册。
+* **会话总线必须对得上**：必须用当前桌面会话的那条 D-Bus 会话总线
+  （本机为 `unix:path=/tmp/dbus-2MfDhKpTmb`）；用别的会话总线会拿到不匹配的 a11y 总线 guid，
+  报「Couldn't register with accessibility bus」。
+* **不要用 `dbus-send --session` 触发 a11y 相关调用**：它可能激活第二套 `at-spi-bus-launcher`，
+  抢占同一个 socket 路径，导致注册进程失联。插件内部一律走 `gdbus` / `libatspi` 的显式地址。
+* **网页控件的坐标常常不可靠**：Chromium 的 `document web` 正文按钮 `box` 宽高常为 0，
+  因此点击优先走 AT-SPI 动作，只在控件没有动作时才回退坐标点击。
+* **网页 input 不暴露可写文本接口**：`linux_set_value` 对浏览器无效，
+  填表只能 `linux_browser_type`（AT-SPI 聚焦 + XTEST 键入）。

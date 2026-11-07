@@ -5,11 +5,15 @@
 
 请求：
     {"op": "ping"}
-    {"op": "tree", "maxDepth": 8}
+    {"op": "tree", "maxDepth": 8, "app": "应用名", "pid": 1234}
+    {"op": "find", "app": "应用名", "role": "link", "nameContains": "登录"}
+    {"op": "focus", "app": "应用名", "path": "0.1"}
+    {"op": "action", "app": "应用名", "path": "0.1", "action": "jump"}
     {"op": "setValue", "app": "应用名", "path": "0.1", "value": "文本"}
 
 响应：
     {"ok": true, "apps": [...]}
+    {"ok": true, "matches": [...]}
     {"ok": false, "error": "错误说明"}
 
 节点结构：
@@ -225,19 +229,38 @@ def handle_ping(Atspi):
     return {"ok": True, "apps": names}
 
 
+def matches_filter(app, app_name, pid):
+    """判断应用是否命中 app / pid 过滤条件。"""
+    if app_name:
+        name = str(safe_call(app.get_name, "") or "")
+        if name != app_name:
+            return False
+    if pid:
+        app_pid = int(safe_call(app.get_process_id, 0) or 0)
+        if app_pid != int(pid):
+            return False
+    return True
+
+
 def handle_tree(Atspi, request):
-    """采集所有应用的原始节点树。"""
+    """采集原始节点树；可用 app / pid 只取指定应用。"""
     max_depth = request.get("maxDepth")
     if not isinstance(max_depth, int) or max_depth < 1:
         max_depth = 8
     max_depth = min(max_depth, 20)
 
+    app_name = str(request.get("app") or "")
+    pid = request.get("pid")
+    pid = int(pid) if isinstance(pid, int) else 0
+
     apps = []
     for app in list_applications(Atspi):
+        if not matches_filter(app, app_name, pid):
+            continue
         name = str(safe_call(app.get_name, "") or "")
-        pid = int(safe_call(app.get_process_id, 0) or 0)
+        app_pid = int(safe_call(app.get_process_id, 0) or 0)
         nodes = build_node(app, Atspi, "", 0, max_depth)
-        apps.append({"name": name, "pid": pid, "nodes": nodes})
+        apps.append({"name": name, "pid": app_pid, "nodes": nodes})
     return {"ok": True, "apps": apps}
 
 
@@ -250,6 +273,22 @@ def find_application(Atspi, wanted):
         if str(safe_call(app.get_name, "") or "") == wanted:
             return app
     return None
+
+
+def resolve_application(Atspi, app_name, pid):
+    """按 app 名称 / pid 定位应用；两者都为空时取第一个。"""
+    if app_name:
+        app = find_application(Atspi, app_name)
+        if app is not None:
+            return app
+        return None
+    if pid:
+        for candidate in list_applications(Atspi):
+            if matches_filter(candidate, "", pid):
+                return candidate
+        return None
+    apps = list_applications(Atspi)
+    return apps[0] if apps else None
 
 
 def walk_path(app, path):
@@ -313,6 +352,165 @@ def handle_set_value(Atspi, request):
     }
 
 
+def handle_find(Atspi, request):
+    """在应用树里按 role / nameContains 查找节点，返回匹配节点的路径与摘要。"""
+    app_name = str(request.get("app") or "")
+    pid = request.get("pid")
+    pid = int(pid) if isinstance(pid, int) else 0
+    role = str(request.get("role") or "")
+    name_contains = str(request.get("nameContains") or "")
+    max_depth = request.get("maxDepth")
+    if not isinstance(max_depth, int) or max_depth < 1:
+        max_depth = 20
+    max_depth = min(max_depth, 20)
+    limit = request.get("limit")
+    limit = int(limit) if isinstance(limit, int) and limit > 0 else 50
+
+    matches = []
+    for app in list_applications(Atspi):
+        if not matches_filter(app, app_name, pid):
+            continue
+        app_title = str(safe_call(app.get_name, "") or "")
+        app_pid = int(safe_call(app.get_process_id, 0) or 0)
+        stack = [(app, "", 0)]
+        while stack and len(matches) < limit:
+            node, path, depth = stack.pop()
+            if depth > 0:
+                node_role = str(safe_call(node.get_role_name, "") or "")
+                node_name = str(safe_call(node.get_name, "") or "")
+                if (not role or node_role == role) and (
+                    not name_contains or name_contains.lower() in node_name.lower()
+                ):
+                    matches.append(
+                        {
+                            "app": app_title,
+                            "pid": app_pid,
+                            "path": path,
+                            "role": node_role,
+                            "name": node_name,
+                            "description": str(safe_call(node.get_description, "") or ""),
+                            "box": node_box(node, Atspi),
+                            "editable": node_is_editable(node),
+                            "actions": node_actions(node),
+                        }
+                    )
+                    if len(matches) >= limit:
+                        break
+            if depth >= max_depth:
+                continue
+            count = safe_call(node.get_child_count, 0) or 0
+            children = []
+            for index in range(min(count, MAX_CHILDREN)):
+                child = safe_call(lambda i=index: node.get_child_at_index(i))
+                if child is None:
+                    continue
+                child_path = str(index) if path == "" else "%s.%d" % (path, index)
+                children.append((child, child_path, depth + 1))
+            # 反向入栈，保证弹出顺序与从左到右的遍历顺序一致。
+            for item in reversed(children):
+                stack.append(item)
+    return {"ok": True, "matches": matches}
+
+
+def handle_focus(Atspi, request):
+    """让目标控件获得键盘焦点（浏览器地址栏 / 输入框靠这个 + XTEST 键入）。"""
+    app_name = str(request.get("app") or "")
+    pid = request.get("pid")
+    pid = int(pid) if isinstance(pid, int) else 0
+    path = str(request.get("path") or "")
+
+    app = resolve_application(Atspi, app_name, pid)
+    if app is None:
+        return {
+            "ok": False,
+            "error": "找不到应用「%s」：它可能没有注册到无障碍总线（安装依赖后需要重启该应用）。" % app_name,
+        }
+
+    node = walk_path(app, path)
+    if node is None:
+        return {
+            "ok": False,
+            "error": "控件已失效（路径 %s 不存在）：界面可能已经变化，请重新读取页面状态。" % path,
+        }
+
+    focused = safe_call(lambda: node.get_component_iface().grab_focus(), False)
+    return {
+        "ok": True,
+        "focused": bool(focused),
+        "role": str(safe_call(node.get_role_name, "") or ""),
+        "name": str(safe_call(node.get_name, "") or ""),
+    }
+
+
+def handle_action(Atspi, request):
+    """对目标控件执行 AT-SPI 动作（link=jump / button=click / press / activate）。"""
+    app_name = str(request.get("app") or "")
+    pid = request.get("pid")
+    pid = int(pid) if isinstance(pid, int) else 0
+    path = str(request.get("path") or "")
+    wanted = str(request.get("action") or "")
+
+    app = resolve_application(Atspi, app_name, pid)
+    if app is None:
+        return {
+            "ok": False,
+            "error": "找不到应用「%s」：它可能没有注册到无障碍总线。" % app_name,
+        }
+
+    node = walk_path(app, path)
+    if node is None:
+        return {
+            "ok": False,
+            "error": "控件已失效（路径 %s 不存在）：界面可能已经变化，请重新读取页面状态。" % path,
+        }
+
+    interface = safe_call(node.get_action_iface)
+    if interface is None:
+        return {
+            "ok": False,
+            "error": "该控件不支持 AT-SPI 动作（可能需要改用坐标点击）：%s"
+            % (safe_call(node.get_role_name, "") or "未知角色"),
+        }
+
+    count = safe_call(interface.get_n_actions, 0) or 0
+    names = []
+    for index in range(count):
+        names.append(str(safe_call(lambda i=index: interface.get_action_name(i), "") or ""))
+
+    index = -1
+    if wanted:
+        for position, name in enumerate(names):
+            if name.lower() == wanted.lower():
+                index = position
+                break
+        if index < 0:
+            return {
+                "ok": False,
+                "error": "该控件没有名为「%s」的动作（可用动作：%s）"
+                % (wanted, ", ".join(names) if names else "无"),
+            }
+    else:
+        for position, name in enumerate(names):
+            if name.lower() in ("click", "press", "jump", "doDefault".lower()):
+                index = position
+                break
+        if index < 0 and count > 0:
+            index = 0
+
+    if index < 0:
+        return {"ok": False, "error": "该控件没有可执行的动作"}
+
+    performed = safe_call(lambda: interface.do_action(index), False)
+    return {
+        "ok": True,
+        "performed": bool(performed),
+        "action": names[index] if index < len(names) else "",
+        "available": names,
+        "role": str(safe_call(node.get_role_name, "") or ""),
+        "name": str(safe_call(node.get_name, "") or ""),
+    }
+
+
 def main():
     """入口：读请求 → 分派 → 输出 JSON。"""
     request = read_request()
@@ -331,6 +529,12 @@ def main():
         result = handle_ping(Atspi)
     elif op == "tree":
         result = handle_tree(Atspi, request)
+    elif op == "find":
+        result = handle_find(Atspi, request)
+    elif op == "focus":
+        result = handle_focus(Atspi, request)
+    elif op == "action":
+        result = handle_action(Atspi, request)
     elif op == "setValue":
         result = handle_set_value(Atspi, request)
     else:

@@ -1,5 +1,44 @@
 # 更新日志
 
+### v1.10.0  2026-11-07
+
+新增浏览器能力：全程走 **AT-SPI 无障碍树 + XTEST**，**不使用 CDP**；并顺带优化了四个既有工具。
+
+1. 新增 5 个浏览器工具：
+   - `linux_browser_launch`：启动浏览器**专用实例**，命令行带 `--force-renderer-accessibility`、
+     使用独立 profile 目录；**刻意不加 `--remote-debugging-port`**（不启用 CDP）。
+     同一 profile 已有实例在跑时直接复用并导航，避免 Chromium 把第二次启动转交后自行退出、
+     导致 AX 总线上永远不出现新 pid。
+   - `linux_browser_state`：只读地读出当前网页的标题、地址、链接、按钮、输入框与正文片段。
+   - `linux_browser_click`：按 `role` / `name_contains` 定位控件，**优先使用 AT-SPI 动作**
+     （链接 `jump`、按钮 `press`/`click`）；控件没有动作时才回退到坐标点击。
+   - `linux_browser_type`：AT-SPI 聚焦输入框后用 XTEST 真实键入（Chromium 的网页输入框
+     不暴露可写文本接口，只能这样做），支持 `clear` / `submit`。
+   - `linux_browser_navigate`：地址栏聚焦 → 全选 → 键入 → 回车，并读回落地后的标题与地址。
+2. 新增 `lib/browser.js`（纯逻辑：启动计划、页面摘要、元素分组、目标挑选）与
+   `lib/browser-runtime.js`（浏览器运行时：AX 树读写、动作触发、窗口聚焦、键入、实例识别）；
+   `lib/a11y-env.js` 从 `lib/tools.js` 抽出无障碍环境的构造与错误翻译，供普通工具与浏览器工具共用。
+3. `lib/atspi.py` 新增 3 个操作：`find`（按角色 / 名称定位控件）、`focus`（`grab_focus`）、
+   `action`（按动作名触发 AT-SPI 动作）；`tree` 支持按应用名与 pid 过滤。
+4. 优化既有工具：
+   - `linux_check_env` 新增 `browser` 段：列出无障碍总线上的每个浏览器实例，并标出它有没有带
+     `--force-renderer-accessibility`——一眼看出哪个实例读得到网页内容；
+     `issues` 相应新增 browser-missing / browser-bus-unavailable / browser-no-accessible-instance 三条。
+   - `linux_app_state` 新增 `summary`（只按应用与角色报数量）与 `limit`（限制返回控件数）。
+   - `linux_type` 新增 `clear`（输入前全选覆盖）与 `submit`（输入后回车）。
+   - `linux_launch_app` 新增 `env` 参数，可注入环境变量（键名须符合 `[A-Za-z_][A-Za-z0-9_]*`）。
+5. `lib/guard.js` 的 `guardAction` 新增 `ignoreScope` 选项：启动浏览器实例属于「新建窗口」，
+   不应被已有窗口白名单拦下；浏览器工具的作用域与风险判定改用**浏览器窗口标题**。
+6. 测试：新增 `test/browser.test.js`（18 个用例，覆盖常量、启动计划不含 CDP 端口、页面摘要、
+   目标定位、5 个工具的注册与输出 schema）；`test/integration.test.js` 新增
+   「浏览器工具（AT-SPI + XTEST，不走 CDP）」整组真实桌面集成用例（launch / state / navigate /
+   type+click）。全量 `npm test` 144 个用例全绿。
+
+> **浏览器能力生效的三个条件**：无障碍总线在跑、屏幕阅读器开关打开
+> （`gsettings set org.gnome.desktop.a11y.applications screen-reader-enabled true`）、
+> 浏览器带 `--force-renderer-accessibility`（`linux_browser_launch` 已自动加上）。
+> 另外，**无障碍注册进程重启后，已在运行的浏览器会从总线上掉线，需要重启浏览器才能重新注册**。
+
 ### v1.9.0  2026-11-07
 
 新增插件市场截图：仓库内声明 `screenshots.json`，插件市场详情页按 App Store 方式展示。

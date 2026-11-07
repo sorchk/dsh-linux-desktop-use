@@ -53,6 +53,11 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 | `linux_verify_state` | 断言窗口标题、焦点窗口、窗口数量，并判断画面是否变化 | 只读 |
 | `linux_app_state` | 读取运行中 GUI 应用的无障碍树（控件角色、名称、坐标、文本） | 只读 |
 | `linux_set_value` | 直接给某个可编辑控件写入文本（不走逐键模拟） | 写 |
+| `linux_browser_launch` | 启动浏览器专用实例（带 `--force-renderer-accessibility`，独立 profile） | 写 |
+| `linux_browser_state` | 读出当前网页的标题、地址、链接、按钮、输入框与正文 | 只读 |
+| `linux_browser_click` | 按角色 / 名称点击网页控件（优先 AT-SPI 动作，回退坐标点击） | 写 |
+| `linux_browser_type` | 向网页输入框键入文本（AT-SPI 聚焦 + XTEST 键入） | 写 |
+| `linux_browser_navigate` | 让浏览器导航到指定网址（地址栏聚焦 + XTEST 键入） | 写 |
 
 > **写操作必须先观察**：任何写工具执行前都需要一次新鲜的 `linux_screenshot`
 > （默认 TTL 30 秒）；写操作完成后快照作废（界面可能已变），下一次写需重新观察。
@@ -70,6 +75,36 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 
 > `linux_launch_app` / `linux_activate_app` / `linux_set_window_frame` 属于写操作：
 > 纳入作用域白名单、危险语义识别与分级审批，动作后同样作废观察快照。
+> `linux_launch_app` 额外支持 `env` 参数注入环境变量（键名须符合 `[A-Za-z_][A-Za-z0-9_]*`）。
+
+### 浏览器能力（v1.10.0 起，AT-SPI + XTEST，**不使用 CDP**）
+
+浏览器这一块刻意**不接 CDP**：插件自己起一个带 `--force-renderer-accessibility`
+的 Chromium 实例，用 AT-SPI 无障碍树读页面、用 XTEST 注入键盘事件做输入。
+浏览器起在一个独立 profile 目录里，不会打扰你正在用的窗口。
+
+| 工具 | 输入 | 输出要点 | 备注 |
+| --- | --- | --- | --- |
+| `linux_browser_launch` | `url?`、`binary?`、`profile_dir?`、`extra_args?`、`no_sandbox?` | `pid`、`binary`、`profile_dir`、`registered`、`reused` | 启动带 `--force-renderer-accessibility` 的专用实例；**命令行不含 `--remote-debugging-port`**。同一 profile 已有实例在跑时直接复用 |
+| `linux_browser_state` | `pid?`、`app?`、`max_depth?`、`text_limit?` | `title`、`url`、`window_title`、`links`、`buttons`、`inputs`、`text` | 只读。目标实例默认取 `linux_browser_launch` 启动的那个 |
+| `linux_browser_click` | `role?`、`name_contains?`、`exact?`、`index?`、`pid?`、`app?` | `role`、`name`、`path`、`action`、`method`、`box` | 优先用 AT-SPI 动作（链接 `jump`、按钮 `press`/`click`）；控件没有动作时才回退坐标点击 |
+| `linux_browser_type` | `text`（必填）、`role?`、`name_contains?`、`exact?`、`index?`、`clear?`、`submit?`、`pid?`、`app?` | `role`、`name`、`path`、`typed`、`clear`、`submit` | Chromium 的网页输入框不暴露可写文本接口，只能 AT-SPI 聚焦后真实键入 |
+| `linux_browser_navigate` | `url`（必填）、`pid?`、`app?` | `url`、`title`、`final_url` | 地址栏聚焦 → 全选 → 键入 → 回车 |
+
+**为什么不用 CDP**：CDP 要开 `--remote-debugging-port`，等于把浏览器完全交出去；
+AT-SPI 走的是系统无障碍总线，读到的是**用户真正能看到的无障碍树**，
+和读屏软件看到的是同一份数据，且不需要在浏览器上开调试端口。
+
+**三个必要条件**（缺一个就读不到网页）：
+
+1. **无障碍总线在跑**：`at-spi2-core` 装好、`at-spi-bus-launcher` 正常；
+2. **屏幕阅读器开关打开**：`gsettings set org.gnome.desktop.a11y.applications screen-reader-enabled true`
+   （或 `org.gnome.desktop.interface toolkit-accessibility true`）；
+3. **浏览器带 `--force-renderer-accessibility`**：`linux_browser_launch` 已自动加上；
+   手动启动的浏览器请自己加上，否则无障碍树里只剩一个空壳窗口。
+
+> `linux_check_env` 的 `browser` 段会列出总线上每个浏览器实例，并标出它有没有带
+> `--force-renderer-accessibility`——一眼就能看出哪个实例读得到网页内容。
 
 ### AT-SPI 无障碍能力（v1.7.0 起）
 
@@ -77,7 +112,7 @@ Wayland 原生会话不适用（根窗口不合成、XTEST 无法注入原生 Wa
 
 | 工具 | 输入 | 输出要点 | 备注 |
 | --- | --- | --- | --- |
-| `linux_app_state` | `app?`、`role?`、`name_contains?`、`max_depth?` | `apps`（应用名 + pid + 控件节点）、`nodes`、`counts` | 每个节点带 `role`、`name`、`states`、`box`（屏幕绝对坐标）、`text`（文本直读）、`editable`、`actions` |
+| `linux_app_state` | `app?`、`role?`、`name_contains?`、`max_depth?`、`summary?`、`limit?` | `apps`（应用名 + pid + 控件节点）、`nodes`、`counts`、`roles` | 每个节点带 `role`、`name`、`states`、`box`（屏幕绝对坐标）、`text`（文本直读）、`editable`、`actions`；`summary=true` 只按应用与角色报数量 |
 | `linux_set_value` | `value`（必填）、`app?`、`role?`、`name_contains?` | `before`、`after`、`changed` | 写操作：走观察门禁 + 作用域白名单 + 分级审批，写后作废观察快照 |
 
 两条顺带解决的能力：
@@ -97,7 +132,8 @@ sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
 > 2. 依赖装好后要**重新加载宿主**（重装一次 bundle）才会看到新工具。
 >
 > `linux_check_env` 体检报告新增 `a11y` 段，逐项列出 `python3` / `gi` / 无障碍总线是否就绪；
-> 缺失时记一条 info 级提示，不会让体检判失败。
+> 缺失时记一条 info 级提示，不会让体检判失败。`browser` 段则列出总线上每个浏览器实例
+> 及其是否带 `--force-renderer-accessibility`（v1.10.0 起）。
 
 ## 插件详情页：检查依赖 + 配置项
 
@@ -171,8 +207,9 @@ sudo apt-get install -y at-spi2-core libatk-adaptor python3-gi gir1.2-atspi-2.0
 | `wmctrl` | 列出窗口、激活窗口（EWMH） | 建议 |
 | `xrandr` / `xprop` | 屏幕尺寸兜底 + 显示器枚举（`linux_displays`） | 建议 |
 | `ffmpeg` | 截图回退实现、截图缩放 + 画面指纹计算（`linux_verify_state`） | 建议 |
-| `python3` + `python3-gi` + `gir1.2-atspi-2.0` | 无障碍树采集脚本（`linux_app_state` / `linux_set_value`） | 可选 |
+| `python3` + `python3-gi` + `gir1.2-atspi-2.0` | 无障碍树采集脚本（`linux_app_state` / `linux_set_value` / `linux_browser_*`） | 可选 |
 | `at-spi2-core` + `libatk-adaptor` | 无障碍总线与 ATK 桥接（让 GUI 应用暴露无障碍树） | 可选 |
+| `chromium` / `google-chrome` | 浏览器专用实例（`linux_browser_*`，需 `--force-renderer-accessibility`） | 可选 |
 | `xdpyinfo` | XTEST 扩展能力探测（缺失时回退用 xdotool 探测） | 可选 |
 
 安装：
@@ -299,7 +336,7 @@ node /home/sorc/workspaces/dsh-xfce-use/scripts/smoke-test.mjs
 npm test
 
 # 确认宿主已注册工具
-cordis_inspect_query host Tool listTools   # 应看到 19 个 linux_* 工具
+cordis_inspect_query host Tool listTools   # 应看到 24 个 linux_* 工具
 ```
 
 > 本包以链接方式安装时，**改完代码需要让宿主重新加载模块**（重装一次 bundle 触发

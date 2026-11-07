@@ -1,8 +1,8 @@
 {
   "name": "dsh-linux-desktop-use",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "type": "module",
-  "description": "Control a local Linux graphical desktop from DeepSeek Harness: screenshot, mouse, keyboard, scroll, window, application, display and accessibility-tree (AT-SPI) tools. Requires a native X11 session with XTEST and the xdotool/scrot/ffmpeg/wmctrl binaries; the accessibility-tree tools additionally need at-spi2-core, libatk-adaptor and python3-gi. WARNING: an AI agent operating a computer can cause irreversible damage (deleting files, overwriting documents, leaking credentials, unintended payments); run it inside a sandbox or isolated desktop, never on a machine holding real accounts and production data.",
+  "description": "Control a local Linux graphical desktop from DeepSeek Harness: screenshot, mouse, keyboard, scroll, window, application, display, accessibility-tree (AT-SPI) and browser tools. The browser tools drive a dedicated Chromium instance through the AT-SPI accessibility tree plus XTEST key injection, without using CDP (no --remote-debugging-port). Requires a native X11 session with XTEST and the xdotool/scrot/ffmpeg/wmctrl binaries; the accessibility-tree tools additionally need at-spi2-core, libatk-adaptor and python3-gi. WARNING: an AI agent operating a computer can cause irreversible damage (deleting files, overwriting documents, leaking credentials, unintended payments); run it inside a sandbox or isolated desktop, never on a machine holding real accounts and production data.",
   "scripts": {
     "test": "node --test \"test/*.test.js\""
   },
@@ -86,6 +86,7 @@
         "ffmpeg -f x11grab -i <display> -frames:v 1 -f image2pipe -vcodec png pipe:1",
         "ffmpeg -i <png> -vf scale=64:36,format=gray -f rawvideo -pix_fmt gray pipe:1",
         "python3 <bundle>/lib/atspi.py（AT-SPI 采集脚本，stdin 收 JSON / stdout 出 JSON）",
+        "chromium --user-data-dir=<独立目录> --force-renderer-accessibility --no-first-run --no-default-browser-check --disable-session-crashed-bubble --disable-infobars [--disable-gpu] <url>（浏览器专用实例，不含 --remote-debugging-port，不使用 CDP）",
         "dpkg-query -W -f ${Status}\\t${Version} <package>（依赖体检只读查询系统包状态）",
         "dpkg -s <package>（dpkg-query 不可用时的回退查询）",
         "sudo -n -v（检测免密提权，绝不索取密码）",
@@ -101,13 +102,16 @@
         "/usr/share/applications/*.desktop",
         "~/.local/share/applications/*.desktop",
         "/proc/<pid>/environ（仅读取 D-Bus 会话总线地址）",
+        "/proc/<pid>/cmdline（只读，仅用于判断浏览器实例是否带 --force-renderer-accessibility 与占用哪个 profile）",
         "/run/user/<uid>/at-spi/bus（无障碍总线 socket，只读）",
         "/var/lib/dpkg/status（只读，查询系统包安装状态）"
       ],
       "writePaths": [
         "${TMPDIR:-/tmp}/dsh-linux-*.png（截图临时文件，读取后立即删除）",
         "~/.config/dsh/linux-computer-use.json（仅当插件详情页保存配置或 linux_check_env 之外的配置接口写入）",
-        "~/.local/state/dsh/linux-desktop-use-install.log（依赖安装审计日志，只追加）"
+        "~/.local/state/dsh/linux-desktop-use-install.log（依赖安装审计日志，只追加）",
+        "~/.local/state/dsh-linux-desktop-use/browser-profile/**（浏览器专用实例的独立 profile 目录）",
+        "~/.local/state/dsh-linux-desktop-use/browser.json（记录浏览器实例 pid 与 profile，写入后由后续 browser 工具读取）"
       ],
       "externalServices": [],
       "failureBoundaries": [
@@ -129,10 +133,15 @@
         "linux_verify_state 在没有观察快照时不返回画面比对结论（screen_changed 为 null），只给出窗口层面的断言结果",
         "AT-SPI 依赖缺失时 linux_app_state / linux_set_value 报可读错误（含安装命令），其余工具完全不受影响",
         "linux_app_state 找不到匹配应用时返回空列表而不是报错；linux_set_value 找不到应用或可编辑控件时直接报错",
-        "linux_set_value 与其他写工具一样需要新鲜观察快照，写后观察快照作废"
+        "linux_set_value 与其他写工具一样需要新鲜观察快照，写后观察快照作废",
+        "浏览器工具不使用 CDP：启动命令行不含 --remote-debugging-port；页面内容只从 AT-SPI 无障碍树读取，键盘输入只经 XTEST 注入",
+        "AT-SPI 依赖缺失或无障碍总线不可用时，5 个 linux_browser_* 报可读错误（含安装命令），其余工具完全不受影响",
+        "浏览器没有带 --force-renderer-accessibility 时无障碍树里只有空壳窗口，此时 linux_browser_state 读不到网页内容并如实报告",
+        "linux_browser_launch 使用的 profile 目录已有实例在跑时复用该实例（reused=true），不会重复启动同一 profile",
+        "浏览器工具找不到目标实例时直接报错并列出当前在线的实例，不做模糊猜测"
       ],
       "lifecycleEvidence": [
-        "cordis_inspect_query(host, Tool, listTools) 可见 19 个 linux_* 工具",
+        "cordis_inspect_query(host, Tool, listTools) 可见 24 个 linux_* 工具",
         "插件详情页的「检查依赖」按钮与 linux_check_env 读取同一份体检报告（GET /dsh-linux-desktop-use/check）",
         "linux_desktop_status 输出 display/screen/pointer/active_window/approval_mode/observation 状态与 config_path",
         "linux_apps 输出已安装应用与运行中窗口；linux_displays 输出显示器列表",
@@ -142,6 +151,10 @@
         "体检报告的 dependencies 段逐条列出依赖目录中的每一项（类型、级别、用途、状态、提供者软件包），summary 给出 dependenciesPresent/dependenciesTotal/dependenciesMissing",
         "详情页依赖清单下方按需出现「一键安装缺失依赖」按钮，二次确认后由 POST /dsh-linux-desktop-use/install 启动后台安装任务，GET /dsh-linux-desktop-use/install 轮询进度与输出",
         "linux_app_state 输出控件角色、名称、屏幕坐标与文本；linux_set_value 输出 before/after/changed",
+        "linux_browser_launch 输出的命令行不含 --remote-debugging-port；linux_browser_state 输出 title/url/links/buttons/inputs/text",
+        "linux_browser_click 优先使用 AT-SPI 动作（链接 jump、按钮 press/click），无动作时才回退坐标点击",
+        "linux_browser_type 通过 AT-SPI 聚焦 + XTEST 键入向网页输入框写入文本（Chromium 的网页 input 不暴露 EditableText）",
+        "体检报告新增 browser 段：列出无障碍总线上的浏览器实例及其是否带 --force-renderer-accessibility",
         "PERMISSIONS.md 列出逐项权限来源",
         "VERIFICATION.md 记录实机验证步骤与结果"
       ]

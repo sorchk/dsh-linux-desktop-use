@@ -12,7 +12,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createTools } from '../lib/tools.js'
 import { clearObservation } from '../lib/observe.js'
-import { buildEnv, detectDisplay, detectXauthority } from '../lib/x11.js'
+import { buildEnv, detectDisplay, detectXauthority, findBinary } from '../lib/x11.js'
+import { BROWSER_BINARIES } from '../lib/browser.js'
 
 const display = detectDisplay()
 const xauthority = detectXauthority()
@@ -346,6 +347,15 @@ test('集成：AT-SPI 无障碍树', { skip: hasX ? false : '没有可用的 X �
       assert.equal(value.counts.apps, 0)
       assert.equal(value.counts.nodes, 0)
     })
+
+    await t.test('linux_app_state 的 summary 模式只报数量', async () => {
+      const value = await call('linux_app_state', { app: appName, summary: true })
+      assert.equal(value.summary, true)
+      assert.equal(value.nodes.length, 0, 'summary 模式不逐个列出控件')
+      assert.equal(value.apps.length, 1)
+      assert.ok(value.apps[0].count > 0, '仍要报出控件总数')
+      assert.ok(Array.isArray(value.roles) && value.roles.length > 0, '要按角色汇总')
+    })
   } finally {
     try {
       process.kill(-child.pid)
@@ -353,4 +363,96 @@ test('集成：AT-SPI 无障碍树', { skip: hasX ? false : '没有可用的 X �
       // 测试进程可能已经退出
     }
   }
+})
+
+/**
+ * 浏览器工具（linux_browser_*）的集成用例。
+ *
+ * 全程走 AT-SPI 无障碍树 + XTEST，不使用 CDP：插件自己起一个带
+ * --force-renderer-accessibility 的 Chromium 实例，然后读页面、导航、点击、输入。
+ * 环境缺 Chromium 或无障碍总线时整组跳过。
+ */
+test('集成：浏览器工具（AT-SPI + XTEST，不走 CDP）', { skip: hasX ? false : '没有可用的 X 会话' }, async (t) => {
+  const a11yReady = await checkA11yReady()
+  if (!a11yReady.ok) {
+    t.skip(a11yReady.reason)
+    return
+  }
+  const browserBinary = BROWSER_BINARIES.map(name => findBinary(name, buildEnv({ display, xauthority })))
+    .find(Boolean)
+  if (!browserBinary) {
+    t.skip('没有安装 Chromium / Chrome')
+    return
+  }
+
+  await t.test('linux_browser_launch 起实例并注册到无障碍总线', async () => {
+    const value = await call('linux_browser_launch', { url: 'about:blank' })
+    assert.ok(value.pid > 0, '要拿到进程号')
+    assert.ok(value.profile_dir, '要报告独立 profile 目录')
+    assert.equal(value.registered, true, '实例应当注册到无障碍总线')
+    assert.ok(!value.binary.includes('remote-debugging'), '不得开启 CDP 端口')
+  })
+
+  await t.test('linux_browser_state 读出页面标题、地址与控件', async () => {
+    const launched = await call('linux_browser_launch', { url: 'data:text/html,<h1>BrowserToolTest</h1><p>hello</p>' })
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    const value = await call('linux_browser_state', { pid: launched.pid })
+    assert.ok(value.pid > 0)
+    assert.match(value.text, /BrowserToolTest/)
+    assert.match(value.text, /hello/)
+    assert.ok(typeof value.url === 'string')
+  })
+
+  await t.test('linux_browser_navigate 换页并读回新地址', async () => {
+    const launched = await call('linux_browser_launch', { url: 'about:blank' })
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    const value = await call('linux_browser_navigate', {
+      pid: launched.pid,
+      url: 'data:text/html,<h1>Navigated</h1>',
+    })
+    assert.equal(value.url, 'data:text/html,<h1>Navigated</h1>')
+    assert.ok(value.final_url.length > 0, '要读回地址栏里的内容')
+  })
+
+  await t.test('linux_browser_type 向输入框输入，linux_browser_click 点按钮', async () => {
+    const form = path.join(mkdtempSync(path.join(tmpdir(), 'dsh-browser-')), 'form.html')
+    writeFileSync(
+      form,
+      [
+        '<!doctype html><html><body>',
+        '<h1>Form</h1>',
+        '<input aria-label="Name field" type="text">',
+        '<button type="button">Submit</button>',
+        '<p id="out">idle</p>',
+        '<script>document.querySelector("button").onclick=()=>{document.getElementById("out").textContent="done:"+document.querySelector("input").value}</script>',
+        '</body></html>',
+      ].join('\n'),
+    )
+
+    const launched = await call('linux_browser_launch', { url: `file://${form}` })
+    await new Promise(resolve => setTimeout(resolve, 1500))
+
+    const state = await call('linux_browser_state', { pid: launched.pid })
+    assert.ok(state.inputs.some(item => item.name === 'Name field'), '要能读出输入框')
+    assert.ok(state.buttons.some(item => item.name === 'Submit'), '要能读出按钮')
+
+    const typed = await call('linux_browser_type', {
+      pid: launched.pid,
+      name_contains: 'Name field',
+      text: '插件测试',
+    })
+    assert.equal(typed.typed, 4)
+    assert.equal(typed.clear, true)
+
+    const clicked = await call('linux_browser_click', {
+      pid: launched.pid,
+      name_contains: 'Submit',
+    })
+    assert.equal(clicked.method, 'atspi-action')
+    assert.equal(clicked.action, 'press')
+
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    const after = await call('linux_browser_state', { pid: launched.pid })
+    assert.match(after.text, /done:插件测试/, '输入的内容要真的进了页面')
+  })
 })

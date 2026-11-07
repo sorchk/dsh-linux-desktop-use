@@ -39,6 +39,9 @@
 | 读取无障碍树 | `python3` + `python3-gi` + `gir1.2-atspi-2.0`（子进程，只读遍历 AX 树） | `linux_app_state` 读取控件角色、名称、坐标与文本 | 该工具报可读错误，其余工具不受影响 |
 | 写入控件文本 | 同上，走 `EditableText.set_text_contents` | `linux_set_value` 直接给控件赋值 | 该工具报可读错误，其余工具不受影响 |
 | 读取无障碍总线 | `/run/user/<uid>/at-spi/bus`（socket，只读） | 让 python 子进程连上 AT-SPI 总线 | 无障碍功能整体不可用 |
+| 启动浏览器实例 | `child_process.spawn`（固定 argv，不经 shell），独立 profile 目录 | `linux_browser_launch` 起一个带 `--force-renderer-accessibility` 的 Chromium | 浏览器工具报错，其余工具不受影响 |
+| 触发控件动作 / 聚焦控件 | AT-SPI `Action.do_action` / `Component.grab_focus`（经 `lib/atspi.py` 子进程） | `linux_browser_click` / `linux_browser_type` / `linux_browser_navigate` | 相关浏览器工具报错，其余工具不受影响 |
+| 读取浏览器进程命令行 | `/proc/<pid>/cmdline`（只读） | 判断实例是否带 `--force-renderer-accessibility`、是否占用同一 profile | 体检的 `browser` 段信息不全 |
 | 读取桌面条目（AT-SPI 侧） | 无需额外权限：`lib/atspi.py` 只做遍历与接口调用 | 采集控件树 | — |
 | 写临时文件 | `${TMPDIR:-/tmp}` 可写 | `scrot` 不能写管道，先落临时 PNG 再读回 | `linux_screenshot` 报错 |
 | 交图给模型 | `ctx.attachments.saveImage` | 把 PNG 转成模型可见的图片块 | 截图工具不注册 |
@@ -64,9 +67,13 @@
 ## 4. 写操作与只读操作
 
 * 只读（不触发审批、不改桌面）：`linux_screenshot`、`linux_windows`、`linux_desktop_status`、`linux_check_env`、
-  `linux_apps`、`linux_displays`、`linux_verify_state`、`linux_app_state`。
+  `linux_apps`、`linux_displays`、`linux_verify_state`、`linux_app_state`、`linux_browser_state`。
 * 写（触发门禁 + 审批）：`linux_click`、`linux_drag`、`linux_type`、`linux_key`、`linux_scroll`、`linux_activate_window`、
-  `linux_launch_app`、`linux_activate_app`、`linux_set_window_frame`、`linux_set_value`。
+  `linux_launch_app`、`linux_activate_app`、`linux_set_window_frame`、`linux_set_value`、
+  `linux_browser_launch`、`linux_browser_click`、`linux_browser_type`、`linux_browser_navigate`。
+* 浏览器工具的观察门禁由**无障碍树**满足（读树即是一次对目标页面的新鲜观察），
+  不需要额外的 `linux_screenshot`；作用域白名单与风险判定改用**浏览器窗口标题**。
+  `linux_browser_launch` 属于「新建窗口」，用 `ignoreScope` 跳过已有窗口白名单，但仍需审批。
 * `linux_move_mouse` 只移动指针，不改变任何应用状态，因此不触发审批，但仍需要新鲜的观察快照。
 * `linux_verify_state` 保持只读：它会刷新观察快照里的画面指纹基线，但不会解除观察门禁本身。
 
@@ -132,8 +139,30 @@
 
 ## 7. AT-SPI（无障碍）能力是可选增强
 
-`linux_app_state` / `linux_set_value` 依赖系统级的 AT-SPI 栈。**缺失或不可用时，只有这两个工具报错，
-其余 17 个工具完全不受影响**，依赖体检也只记一条 info 级提示（`a11y-unavailable`），不会判失败。
+`linux_app_state` / `linux_set_value` 与 5 个 `linux_browser_*` 依赖系统级的 AT-SPI 栈。
+**缺失或不可用时，只有这些工具报错，其余 19 个工具完全不受影响**，
+依赖体检也只记一条 info 级提示（`a11y-unavailable`），不会判失败。
+
+### 7.1 浏览器工具不使用 CDP
+
+浏览器这一块**刻意不走 CDP**（Chrome DevTools Protocol）：
+
+* **不开启** `--remote-debugging-port`，启动命令行里根本没有调试端口；
+* 页面内容通过 **AT-SPI 无障碍树**读取——和读屏软件看到的是同一份数据；
+* 输入通过 **XTEST** 注入真实键盘事件，和真人打字等价；
+* 因此不需要额外的网络端口暴露，也不需要在浏览器上开任何调试开关。
+
+生效需要三个条件同时满足：
+
+| 条件 | 不满足时 |
+| --- | --- |
+| 无障碍总线在跑（`at-spi2-core`） | 浏览器工具报「AT-SPI 不可用」并给安装命令 |
+| 屏幕阅读器开关打开（`gsettings set org.gnome.desktop.a11y.applications screen-reader-enabled true`） | 浏览器能起来但无障碍树是空的，读不到网页内容 |
+| 浏览器带 `--force-renderer-accessibility`（`linux_browser_launch` 自动加） | 无障碍树里只剩一个空壳窗口；`linux_check_env` 的 `browser` 段会标出来 |
+
+> **注册进程重启后，已在运行的浏览器会从无障碍总线上掉线**，需要重启浏览器才能重新注册。
+> `linux_browser_launch` 使用独立 profile 目录，不会影响你正在用的浏览器窗口；
+> 同一个 profile 目录只允许一个实例在跑，第二次启动会自动复用已有实例。
 
 安装依赖：
 

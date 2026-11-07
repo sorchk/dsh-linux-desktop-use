@@ -10,15 +10,18 @@ XTEST** (XFCE / GNOME / KDE and any other X11 desktop); native Wayland sessions 
 > (the default) so every write is approved one by one. The full risk table is in the
 > [README](https://github.com/sorchk/dsh-linux-desktop-use#️-usage-risks-and-sandbox-recommendations).
 
-**Tools**: 19 `linux_*` tools registered with `ctx.tools` — screenshots, clicks / drags / scrolling, keyboard input
+**Tools**: 24 `linux_*` tools registered with `ctx.tools` — screenshots, clicks / drags / scrolling, keyboard input
 and key combinations, window listing and activation, application listing / launching / focusing, display
 enumeration, window move and resize, UI state assertions, plus optional AT-SPI accessibility-tree reading and
-control-value writing. See the [README tool table](https://github.com/sorchk/dsh-linux-desktop-use#tools) for each
-tool's inputs and outputs. Every write needs a fresh `linux_screenshot` (30 s TTL by default); the snapshot is void
-after a write.
+control-value writing, and **5 browser tools** (`linux_browser_launch` / `_state` / `_click` / `_type` / `_navigate`):
+the browser side runs entirely on the **AT-SPI accessibility tree + XTEST**, **without CDP** — the plugin starts its own
+instance with `--force-renderer-accessibility`. See the [README tool table](https://github.com/sorchk/dsh-linux-desktop-use#tools)
+for each tool's inputs and outputs. Every write needs a fresh `linux_screenshot` (30 s TTL by default); the snapshot is
+void after a write.
 
 **Dependencies**: required `xdotool`; recommended `scrot`, `wmctrl`, `ffmpeg`, `xrandr`/`xprop`; optional
-`python3-gi` + `gir1.2-atspi-2.0` + `at-spi2-core` + `libatk-adaptor` (accessibility tree) and `xdpyinfo`.
+`python3-gi` + `gir1.2-atspi-2.0` + `at-spi2-core` + `libatk-adaptor` (accessibility tree), `xdpyinfo`, and
+`chromium` / `google-chrome` (browser tools).
 One-liner: `sudo apt-get install -y xdotool scrot wmctrl ffmpeg`. The **Check dependencies** button at the top of
 this page and the `linux_check_env` tool read the same report.
 
