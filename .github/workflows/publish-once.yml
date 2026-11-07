@@ -1,0 +1,81 @@
+name: 一次性发布到 npm（临时）
+
+# 临时工作流：因 GitHub Actions 的 workflow_dispatch 目前无法用本机令牌触发，
+# 改为 push 到 main 时自动跑一次；发布成功后即可删除本文件。
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-once
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: 发布到 npm
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/dsh-linux-desktop-use
+    permissions:
+      contents: read
+    steps:
+      - name: 准备 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验 npm token
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::未在仓库 Secrets 中配置 NPM_TOKEN，无法发布"
+            exit 1
+          fi
+          echo "NPM_TOKEN 已配置"
+
+      - name: 检查版本是否已发布
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          echo "待发布版本: ${VERSION}"
+          if npm view "dsh-linux-desktop-use@${VERSION}" version >/dev/null 2>&1; then
+            echo "::error::版本 ${VERSION} 已发布过，跳过"
+            exit 1
+          fi
+
+      - name: 发布
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm publish --access public
+
+      - name: 校验发布结果
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          for i in $(seq 1 20); do
+            if npm view "dsh-linux-desktop-use@${VERSION}" version dist.tarball \
+                 --registry=https://registry.npmjs.org; then
+              echo "::notice::版本 ${VERSION} 已在 npm registry 上确认发布成功"
+              exit 0
+            fi
+            echo "::notice::第 ${i}/20 次回查未查到版本 ${VERSION}，15 秒后重试"
+            sleep 15
+          done
+          echo "::error::发布后在 npm registry 上未查到版本 ${VERSION}（发布可能仍已成功）"
+          exit 1
