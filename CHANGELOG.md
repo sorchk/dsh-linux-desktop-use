@@ -34,6 +34,14 @@
    「浏览器工具（AT-SPI + XTEST，不走 CDP）」整组真实桌面集成用例（launch / state / navigate /
    type+click）。全量 `npm test` 144 个用例全绿。
 
+7. 发布流程改造（`.github/workflows/publish.yml`）：
+   - 改为**推送 `v*` tag 自动构建并发布到 npm 官方仓库**（`registry.npmjs.org`），不再需要手动点
+     「Run workflow」；仍保留手动触发，用于发布演练（`dry_run`）与补发。
+   - **不再向 GitHub 侧写入任何东西**：删除 `upload-artifact` / `download-artifact` 两步，
+     不 push 代码、不建 Release、不发布任何文件；tarball 只存在于 runner 临时目录，发布后立即删除。
+   - 新增 **tag 与 `package.json` 版本一致性校验**（tag `v1.10.0` ↔ version `1.10.0`），
+     防止拿旧 tag 重复发布已上线版本。
+
 > **浏览器能力生效的三个条件**：无障碍总线在跑、屏幕阅读器开关打开
 > （`gsettings set org.gnome.desktop.a11y.applications screen-reader-enabled true`）、
 > 浏览器带 `--force-renderer-accessibility`（`linux_browser_launch` 已自动加上）。
